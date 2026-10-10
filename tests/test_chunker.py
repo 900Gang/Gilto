@@ -58,3 +58,14 @@ def test_invalid_overlap_rejected():
 
     with pytest.raises(ValueError):
         split_text("x" * 500, size=100, overlap=100)
+
+
+def test_start_index_offsets_chunk_index():
+    chunks = chunk_pages([Page(number=2, text="some page text " * 10)], doc_id="d", filename="f.pdf", start_index=5)
+    assert [c.metadata["chunk_index"] for c in chunks] == [5]
+
+
+def test_page_source_type_is_kept():
+    pages = [Page(number=1, text="plain " * 20), Page(number=2, text="scanned " * 20, source_type="vision")]
+    chunks = chunk_pages(pages, doc_id="d", filename="f.pdf")
+    assert [c.metadata["source_type"] for c in chunks] == ["text", "vision"]

@@ -81,8 +81,10 @@ def chunk_pages(
     filename: str,
     size: int = 800,
     overlap: int = 150,
-    source_type: str = "text",
+    start_index: int = 0,
 ) -> list[Chunk]:
+    """Chunk pages. `start_index` lets a document be chunked one page at a time
+    while chunk_index (and so the chunk id) stays unique across the document."""
     chunks: list[Chunk] = []
     for page in pages:
         for text in split_text(page.text, size, overlap):
@@ -93,8 +95,8 @@ def chunk_pages(
                         "doc_id": doc_id,
                         "filename": filename,
                         "page": page.number,
-                        "chunk_index": len(chunks),
-                        "source_type": source_type,
+                        "chunk_index": start_index + len(chunks),
+                        "source_type": page.source_type,
                     },
                 )
             )

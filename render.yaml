@@ -1,0 +1,23 @@
+services:
+  - type: web
+    name: gilto
+    runtime: docker
+    plan: standard        # about 2 GB RAM. The embedding model needs roughly 1.2 GB, so smaller plans fail.
+    healthCheckPath: /_stcore/health
+    disk:
+      name: gilto-data
+      mountPath: /data
+      sizeGB: 5
+    envVars:
+      - key: CHROMA_PATH
+        value: /data/chroma_db
+      - key: OCR_CACHE_PATH
+        value: /data/ocr_cache
+      - key: SQLITE_PATH
+        value: /data/gilto.db
+      - key: AUTH_DISABLED
+        value: "false"
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: ALLOWED_EMAILS
+        sync: false

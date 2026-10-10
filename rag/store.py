@@ -13,7 +13,14 @@ from .chunker import Chunk
 class Retrieved:
     text: str
     metadata: dict
-    score: float  # cosine similarity, higher is closer
+    score: float | None  # cosine similarity (higher is closer); None for a keyword-only match
+
+    def to_dict(self) -> dict:
+        return {"text": self.text, "metadata": self.metadata, "score": self.score}
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Retrieved":
+        return cls(text=data["text"], metadata=data["metadata"], score=data["score"])
 
 
 @dataclass
@@ -32,9 +39,12 @@ class VectorStore:
             client = chromadb.PersistentClient(path=path)
         self._client = client
 
+    @staticmethod
+    def _name(user_id: str) -> str:
+        return "u_" + hashlib.sha256(user_id.encode()).hexdigest()[:32]
+
     def _collection(self, user_id: str):
-        name = "u_" + hashlib.sha256(user_id.encode()).hexdigest()[:32]
-        return self._client.get_or_create_collection(name=name, metadata={"hnsw:space": "cosine"})
+        return self._client.get_or_create_collection(name=self._name(user_id), metadata={"hnsw:space": "cosine"})
 
     @staticmethod
     def _where(user_id: str, doc_ids: list[str] | None = None) -> dict:
@@ -54,6 +64,13 @@ class VectorStore:
             embeddings=embeddings,
             metadatas=[{**c.metadata, "user_id": user_id} for c in chunks],
         )
+
+    def delete_user(self, user_id: str) -> None:
+        """Drop everything stored for a user. Does nothing if they have no data."""
+        name = self._name(user_id)
+        existing = {c if isinstance(c, str) else c.name for c in self._client.list_collections()}
+        if name in existing:
+            self._client.delete_collection(name)
 
     def query(
         self,
@@ -77,6 +94,19 @@ class VectorStore:
                 result["documents"][0], result["metadatas"][0], result["distances"][0]
             )
         ]
+
+    def all_chunks(self, user_id: str, doc_ids: list[str] | None = None) -> list[Retrieved]:
+        """Every chunk the user has, in reading order (file name, then position).
+        Used for keyword search and for summaries. Scores are None."""
+        found = self._collection(user_id).get(
+            where=self._where(user_id, doc_ids), include=["documents", "metadatas"]
+        )
+        chunks = [
+            Retrieved(text=text, metadata=meta, score=None)
+            for text, meta in zip(found["documents"], found["metadatas"])
+        ]
+        chunks.sort(key=lambda c: (c.metadata["filename"].lower(), c.metadata["doc_id"], c.metadata["chunk_index"]))
+        return chunks
 
     def has_doc(self, user_id: str, doc_id: str) -> bool:
         found = self._collection(user_id).get(where=self._where(user_id, [doc_id]), limit=1)

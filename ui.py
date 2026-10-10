@@ -103,7 +103,7 @@ def doc_card(filename: str, pages: int, chunks: int) -> str:
 
 def empty_state() -> None:
     steps = [
-        ("1", "Add documents", "Upload PDFs in the sidebar and choose Add to library."),
+        ("1", "Add documents", "Upload PDFs or images in the sidebar and choose Add to library."),
         ("2", "Ask a question", "Ask about anything in your files."),
         ("3", "Check the sources", "Every answer cites the page it came from."),
     ]
@@ -120,14 +120,15 @@ def empty_state() -> None:
     )
 
 
-def source_card(filename: str, page: int, score: float, source_type: str, text: str) -> str:
+def source_card(filename: str, page: int, score: float | None, source_type: str, text: str) -> str:
     snippet = html.escape(text[:500]) + ("…" if len(text) > 500 else "")
+    relevance = "keyword match" if score is None else f"relevance {score:.2f}"
     return (
         '<div class="g-source"><div class="g-source-head">'
         f'<span class="g-source-name">{html.escape(filename)}</span>'
         f'<span class="g-pill">p.{int(page)}</span>'
         f'<span class="g-pill g-pill-muted">{html.escape(source_type)}</span>'
-        f'<span class="g-score">relevance {score:.2f}</span></div>'
+        f'<span class="g-score">{relevance}</span></div>'
         f'<div class="g-source-text">{snippet}</div></div>'
     )
 
@@ -140,3 +141,15 @@ def pretty_citations(text: str) -> str:
         return f"`{name} · p.{match.group(2).strip()}`"
 
     return _CITATION.sub(chip, text)
+
+
+def login_screen(
+    title: str = "Sign in to Gilto",
+    body: str = "Chat with your own documents. Answers come only from your files.",
+) -> None:
+    brand()
+    st.markdown(
+        f'<div class="g-empty"><div class="g-empty-title">{html.escape(title)}</div>'
+        f'<div class="g-empty-sub">{html.escape(body)}</div></div>',
+        unsafe_allow_html=True,
+    )

@@ -5,3 +5,10 @@ __pycache__/
 .pytest_cache/
 install.log
 *.pyc
+ocr_cache/
+gilto.db
+gilto.db-wal
+gilto.db-shm
+.streamlit/secrets.toml
+eval/docs/
+eval/cases.json

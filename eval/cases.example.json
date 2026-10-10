@@ -1,0 +1,8 @@
+{
+  "documents": ["eval/docs/handbook.pdf", "eval/docs/contract.pdf"],
+  "cases": [
+    {"question": "How many days of annual leave do employees get?", "expected": ["24 days"], "doc": "handbook.pdf", "page": 3},
+    {"question": "What is the notice period for termination?", "expected": ["60 days"], "doc": "contract.pdf", "page": 7},
+    {"question": "Who won the 2018 football world cup?", "type": "out_of_scope"}
+  ]
+}

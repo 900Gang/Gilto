@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 
 from dotenv import load_dotenv
 
@@ -19,9 +19,14 @@ def _float(name: str, default: float) -> float:
     return float(raw) if raw else default
 
 
+def _bool(name: str, default: bool = False) -> bool:
+    raw = os.getenv(name)
+    return raw.strip().lower() in ("1", "true", "yes", "on") if raw else default
+
+
 @dataclass(frozen=True)
 class Settings:
-    api_key: str
+    api_key: str = field(repr=False)  # keep the key out of tracebacks and test output
     model: str
     fast_model: str
     fallback_model: str
@@ -36,6 +41,19 @@ class Settings:
     similarity_threshold: float
     min_page_chars: int
     history_turns: int
+    ocr_confidence_threshold: float
+    ocr_dpi: int
+    ocr_cache_path: str
+    tesseract_cmd: str
+    ocr_langs: str
+    allowed_emails: str
+    auth_disabled: bool
+    sqlite_path: str
+    hourly_question_limit: int
+    daily_token_limit: int
+    monthly_token_cap: int
+    inactive_days: int
+    hybrid_search: bool
 
     @classmethod
     def from_env(cls) -> "Settings":
@@ -55,4 +73,17 @@ class Settings:
             similarity_threshold=_float("SIMILARITY_THRESHOLD", 0.80),
             min_page_chars=_int("MIN_PAGE_CHARS", 50),
             history_turns=_int("HISTORY_TURNS", 4),
+            ocr_confidence_threshold=_float("OCR_CONFIDENCE_THRESHOLD", 60.0),
+            ocr_dpi=_int("OCR_DPI", 200),
+            ocr_cache_path=os.getenv("OCR_CACHE_PATH", "./ocr_cache"),
+            tesseract_cmd=os.getenv("TESSERACT_CMD", ""),
+            ocr_langs=os.getenv("OCR_LANGS", "eng+hin"),
+            allowed_emails=os.getenv("ALLOWED_EMAILS", ""),
+            auth_disabled=_bool("AUTH_DISABLED", False),
+            sqlite_path=os.getenv("SQLITE_PATH", "./gilto.db"),
+            hourly_question_limit=_int("HOURLY_QUESTION_LIMIT", 30),
+            daily_token_limit=_int("DAILY_TOKEN_LIMIT", 200000),
+            monthly_token_cap=_int("MONTHLY_TOKEN_CAP", 5000000),
+            inactive_days=_int("INACTIVE_DAYS", 90),
+            hybrid_search=_bool("HYBRID_SEARCH", True),
         )
