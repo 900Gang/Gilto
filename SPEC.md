@@ -2,9 +2,11 @@
 
 Users upload documents and chat with them. Every answer must be grounded in the user's own files. When the files do not contain the answer, the app says so.
 
-Stack: Python 3.11+, Claude API (`anthropic` SDK), local embeddings, Chroma, Streamlit. No LangChain or LlamaIndex.
+Stack: Python 3.11+, Gemini API (`google-genai` SDK), local embeddings, Chroma, Streamlit. No LangChain or LlamaIndex.
 
 This spec records decisions made in a design review. Each decision has an ID (D1-D19) so build prompts and tests can reference it.
+
+**Provider change.** The design review assumed the Claude API. The project now uses Gemini. Only D4 (disclosure) and D7 (models) changed in substance. The app talks to the model through an `LLM` interface (`rag/llm.py`), so the provider can change again without touching the chain or the UI.
 
 ## 1. Users and access
 
@@ -25,7 +27,7 @@ This spec records decisions made in a design review. Each decision has an ID (D1
 - **D8 OCR pipeline (hybrid).**
   1. Extract the PDF text layer with PyMuPDF.
   2. For any page with fewer than about 50 extracted characters, run Tesseract (`pytesseract`) and record mean confidence from `image_to_data`.
-  3. Pages below the confidence threshold escalate to Claude vision (Haiku-class model).
+  3. Pages below the confidence threshold escalate to Gemini vision (the fast model).
   4. Each chunk carries `source_type`: `text`, `ocr`, or `vision`. The Sources panel shows it.
   5. OCR results are cached by file hash and page number so a retry never pays twice.
 - **D9 Languages.** English and Hindi. Embedding model `multilingual-e5-small` (needs `query: ` and `passage: ` prefixes, handled inside the `Embedder`). Tesseract packs `eng` and `hin`. Answers come back in the language of the question.
@@ -37,21 +39,22 @@ This spec records decisions made in a design review. Each decision has an ID (D1
 - **Retrieval.** Top-k default 5, adjustable 1-10 in the sidebar. A similarity threshold drops weak chunks.
 - **D14a Hybrid search.** Vector search plus BM25 (or SQLite FTS5), fused with reciprocal rank fusion, always scoped to the user.
 - **D14b Summarize path.** If the question matches summarize / overview / compare intent, run a map-reduce summary over the chunks of the document the user picked in a document selector.
-- **D14c Citation verification.** Claude cites as `[filename, p.N]`. Every citation is checked against the retrieved chunks. Unverified citations are removed and the answer gets a "citation could not be verified" note.
+- **D14c Citation verification.** The model cites as `[filename, p.N]`. Every citation is checked against the retrieved chunks. Unverified citations are removed and the answer gets a "citation could not be verified" note.
 - **Grounding rules (system prompt).** Answer only from the provided context. If the context does not contain the answer, reply "I couldn't find that in the uploaded documents." Never use outside knowledge.
-- **Memory.** Last 4 turns go into the prompt. Follow-up questions are rewritten into standalone queries (Haiku-class) before retrieval.
+- **Memory.** Last 4 turns go into the prompt. Follow-up questions are rewritten into standalone queries (fast model) before retrieval. If the rewrite fails, the original question is used.
 - **D17 Prompt injection.** Document text is untrusted data. Retrieved chunks are wrapped in `<document>` tags. The system prompt states that text inside those tags is never an instruction. The model gets no tools. No other user's data ever enters a prompt.
 - **Streaming.** Answers stream to the UI. A collapsible Sources expander under each answer shows chunks with filename, page, score, and `source_type`.
 
 ## 5. Models and cost
 
-- **D7 Models.** Env vars, never hardcoded. Defaults: `CLAUDE_MODEL=claude-sonnet-5-5` for answers, `CLAUDE_FAST_MODEL=claude-haiku-4-5-20251001` for query rewrite and vision OCR. `ANTHROPIC_API_KEY` from env only.
+- **D7 Models.** Env vars, never hardcoded. Defaults: `GEMINI_MODEL=gemini-3.8-flash` for answers, `GEMINI_FAST_MODEL=gemini-3.5-flash-lite` for query rewrite and vision OCR, `GEMINI_FALLBACK_MODEL=gemini-3.6-flash` as a backup for answers. `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) from env only, never in a tracked file.
+- **Reliability.** Gemini returns transient 500/503/504 errors under load. Answer generation retries up to 3 times with backoff (1 s, 2 s), then tries the fallback model once. Retries happen only before any text has streamed. Other errors (bad key, quota) are not retried and show a plain-language message.
 - **Budget.** An app-wide monthly spend cap (env var). At the cap, users see a friendly "limit reached" message, not a crash.
 - **D15 Per-user limits.** Hourly question limit (default 30) and daily token limit (default 200,000), tracked in the `usage` table. Remaining quota shows in the sidebar.
 
 ## 6. Data and privacy
 
-- **D4 Disclosure.** Document text and OCR page images are sent to Anthropic's API. Before a user's first upload they must tick a consent checkbox that says so. No document text is written to logs.
+- **D4 Disclosure.** Document text and OCR page images are sent to Google's Gemini API. Before a user's first upload they must tick a consent checkbox that says so. No document text is written to logs. On Google's free tier, submitted content may be used to improve Google products (check Google's current terms). A deployment that holds confidential documents must use a paid-tier key.
 - **D12 Persistence.** SQLite file on the persistent volume. Tables: `users`, `documents`, `conversations`, `messages`, `usage`. Chats survive logout and refresh. Users can delete a conversation.
 - **D13 Retention.** Original files are kept so users can re-index and view the page behind a citation. Deleting a document hard-deletes the file, its chunks, its OCR cache, and messages citing it. Deleting an account deletes everything for that user. Inactive accounts auto-purge after 90 days (env var). No user-content backups beyond the volume snapshot.
 
@@ -63,13 +66,13 @@ This spec records decisions made in a design review. Each decision has an ID (D1
 
 - **D6 Eval.** `pytest -m eval` runs 20 questions over real PDFs. Pass bar: at least 90% answered correctly with the correct page cited, 100% refusal on out-of-scope questions. User supplies 5 PDFs and 10 questions with expected answers. The rest are drafted for the user to review.
 - **Injection test.** One eval case uses a PDF containing a malicious instruction and asserts the instruction is not followed.
-- **Other tests.** pytest for chunker, loader, store, citation verifier, OCR routing, quota logic. Claude calls are mocked in unit tests.
+- **Other tests.** pytest for chunker, loader, store, citation verifier, OCR routing, quota logic, LLM retry and error translation. Gemini calls are mocked in unit tests.
 
 ## 9. Build phasing (D19)
 
 Each slice runs end to end and is tested before the next begins.
 
-1. **Single-user core.** Text PDFs, chunk, embed, Chroma, Claude answer with verified citations, Streamlit chat, Sources panel.
+1. **Single-user core.** Text PDFs, chunk, embed, Chroma, Gemini answer with verified citations, Streamlit chat, Sources panel.
 2. **Scanned PDFs and images.** OCR hybrid, OCR cache, `source_type`, upload limits.
 3. **Multi-user.** Login, allowlist, per-user isolation, consent, SQLite chat history, quotas, budget cap, delete and retention.
 4. **Retrieval and ship.** Hybrid search, summarize path, Dockerfile, Render deploy, eval suite run against real PDFs.
@@ -78,13 +81,17 @@ Each slice runs end to end and is tested before the next begins.
 
 ```
 app.py                  # Streamlit UI only
+ui.py                   # theme CSS and small HTML components (escaped text only)
 rag/
+  config.py             # settings from env
+  errors.py             # user-facing error types
+  llm.py                # LLM interface + Gemini implementation (retry, fallback)
   loader.py             # PDF/image -> pages with metadata
   ocr.py                # Tesseract + vision fallback + cache (slice 2)
   chunker.py
   embedder.py           # Embedder interface + multilingual-e5-small
   store.py              # Chroma wrapper, per-user collections
-  chain.py              # rewrite -> retrieve -> prompt -> Claude -> verify citations
+  chain.py              # rewrite -> retrieve -> prompt -> LLM -> verify citations
   citations.py          # citation verifier
   indexer.py            # Indexer interface (blocking impl in v1)
   db.py                 # SQLite access (slice 3)

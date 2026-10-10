@@ -24,6 +24,7 @@ class Settings:
     api_key: str
     model: str
     fast_model: str
+    fallback_model: str
     chroma_path: str
     embedding_model: str
     max_file_mb: int
@@ -42,6 +43,7 @@ class Settings:
             api_key=os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY", ""),
             model=os.getenv("GEMINI_MODEL", "gemini-3.8-flash"),
             fast_model=os.getenv("GEMINI_FAST_MODEL", "gemini-3.5-flash-lite"),
+            fallback_model=os.getenv("GEMINI_FALLBACK_MODEL", "gemini-3.6-flash"),
             chroma_path=os.getenv("CHROMA_PATH", "./chroma_db"),
             embedding_model=os.getenv("EMBEDDING_MODEL", "intfloat/multilingual-e5-small"),
             max_file_mb=_int("MAX_FILE_MB", 20),

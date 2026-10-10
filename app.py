@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import streamlit as st
 
+import ui
 from rag.chain import Chain
 from rag.config import Settings
 from rag.embedder import E5Embedder
@@ -33,7 +34,6 @@ def get_store() -> VectorStore:
     return VectorStore(path=get_settings().chroma_path)
 
 
-
 @st.cache_resource
 def get_llm():
     return make_llm(get_settings())
@@ -49,12 +49,22 @@ def render_sources(sources) -> None:
     if not sources:
         return
     with st.expander(f"Sources ({len(sources)})"):
-        for s in sources:
-            meta = s.metadata
-            st.markdown(
-                f"**{meta['filename']}**, page {meta['page']} · score {s.score:.2f} · {meta['source_type']}"
+        cards = "".join(
+            ui.source_card(
+                s.metadata["filename"], s.metadata["page"], s.score, s.metadata["source_type"], s.text
             )
-            st.text(s.text[:600] + ("..." if len(s.text) > 600 else ""))
+            for s in sources
+        )
+        st.markdown(cards, unsafe_allow_html=True)
+
+
+def render_message(message: dict) -> None:
+    with st.chat_message(message["role"]):
+        if message["role"] == "assistant":
+            st.markdown(ui.pretty_citations(message["content"]))
+            render_sources(message.get("sources"))
+        else:
+            st.markdown(message["content"])
 
 
 def index_uploads(files, indexer: BlockingIndexer) -> None:
@@ -72,10 +82,10 @@ def index_uploads(files, indexer: BlockingIndexer) -> None:
             st.session_state.notices.append(("error", f"{file.name}: indexing failed. Try the file again."))
         else:
             if result.duplicate:
-                st.session_state.notices.append(("info", f"{file.name}: already indexed."))
+                st.session_state.notices.append(("info", f"{file.name}: already in your library."))
             else:
                 st.session_state.notices.append(
-                    ("success", f"{file.name}: indexed {result.pages_indexed} pages, {result.chunks} chunks.")
+                    ("success", f"{file.name}: added ({result.pages_indexed} pages, {result.chunks} chunks).")
                 )
                 if result.skipped_pages:
                     pages = ", ".join(str(p) for p in result.skipped_pages)
@@ -86,53 +96,58 @@ def index_uploads(files, indexer: BlockingIndexer) -> None:
 
 
 def sidebar(store: VectorStore, indexer: BlockingIndexer) -> int:
-    st.sidebar.title("Gilto")
-    st.sidebar.caption("Answers come only from the files you upload.")
+    with st.sidebar:
+        ui.brand()
 
-    files = st.sidebar.file_uploader(
-        "Upload PDFs",
-        type=["pdf"],
-        accept_multiple_files=True,
-        key=f"uploader_{st.session_state.uploader_key}",
-    )
-    if st.sidebar.button("Index files", disabled=not files, type="primary"):
-        index_uploads(files, indexer)
-        st.session_state.uploader_key += 1
-        st.rerun()
-
-    for level, message in st.session_state.notices:
-        getattr(st.sidebar, level)(message)
-    st.session_state.notices = []
-
-    st.sidebar.divider()
-    st.sidebar.subheader("Your documents")
-    docs = store.list_docs(USER_ID)
-    if not docs:
-        st.sidebar.caption("Nothing indexed yet.")
-    for doc in docs:
-        left, right = st.sidebar.columns([4, 1])
-        left.markdown(f"**{doc.filename}**  \n{doc.page_count} pages · {doc.chunks} chunks")
-        if right.button("✕", key=f"del_{doc.doc_id}", help=f"Delete {doc.filename}"):
-            store.delete_doc(USER_ID, doc.doc_id)
+        ui.label("Add documents")
+        files = st.file_uploader(
+            "Upload PDFs",
+            type=["pdf"],
+            accept_multiple_files=True,
+            key=f"uploader_{st.session_state.uploader_key}",
+            label_visibility="collapsed",
+        )
+        if st.button("Add to library", disabled=not files, type="primary"):
+            index_uploads(files, indexer)
+            st.session_state.uploader_key += 1
             st.rerun()
 
-    st.sidebar.divider()
-    top_k = st.sidebar.slider("Passages to retrieve", 1, 10, 5)
-    if st.sidebar.button("Clear chat"):
-        st.session_state.messages = []
-        st.rerun()
+        for level, message in st.session_state.notices:
+            getattr(st, level)(message)
+        st.session_state.notices = []
+
+        ui.label("Library")
+        docs = store.list_docs(USER_ID)
+        if not docs:
+            st.caption("No documents yet.")
+        for doc in docs:
+            left, right = st.columns([5, 1], vertical_alignment="center")
+            left.markdown(ui.doc_card(doc.filename, doc.page_count, doc.chunks), unsafe_allow_html=True)
+            if right.button("✕", key=f"del_{doc.doc_id}", help=f"Remove {doc.filename}"):
+                store.delete_doc(USER_ID, doc.doc_id)
+                st.rerun()
+
+        ui.label("Chat")
+        if st.button("New chat", disabled=not st.session_state.messages):
+            st.session_state.messages = []
+            st.rerun()
+        with st.expander("Settings"):
+            top_k = st.slider("Passages to retrieve", 1, 10, 5)
+
+        ui.note("Document text is sent to Google's Gemini API to generate answers.")
     return top_k
 
 
 def main() -> None:
     init_state()
+    ui.inject_css()
     settings = get_settings()
     store = get_store()
     embedder = get_embedder()
     indexer = BlockingIndexer(store, embedder, settings)
     top_k = sidebar(store, indexer)
 
-    st.title("Chat with your documents")
+    st.title("Ask your documents")
 
     chain = None
     try:
@@ -140,42 +155,43 @@ def main() -> None:
     except ConfigError as exc:
         st.error(str(exc))
 
-    has_docs = bool(store.list_docs(USER_ID))
-    if not has_docs:
-        st.info("Upload a PDF in the sidebar and click **Index files** to start chatting.")
+    docs = store.list_docs(USER_ID)
+    if docs:
+        pages = sum(d.page_count for d in docs)
+        ui.subtitle(f"{len(docs)} document{'s' if len(docs) != 1 else ''} · {pages} pages. Answers cite the page they came from.")
+    else:
+        ui.empty_state()
 
     for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
-            render_sources(message.get("sources"))
+        render_message(message)
 
-    question = st.chat_input("Ask about your documents", disabled=not (has_docs and chain))
+    question = st.chat_input("Ask about your documents", disabled=not (docs and chain))
     if not question:
         return
 
     history = [{"role": m["role"], "content": m["content"]} for m in st.session_state.messages]
-    st.session_state.messages.append({"role": "user", "content": question})
     with st.chat_message("user"):
         st.markdown(question)
 
     with st.chat_message("assistant"):
         placeholder = st.empty()
         streamed = ""
+        result = None
         try:
             for kind, payload in chain.stream(USER_ID, question, history, top_k=top_k):
                 if kind == "delta":
                     streamed += payload
-                    placeholder.markdown(streamed + "▌")
+                    placeholder.markdown(ui.pretty_citations(streamed) + "▌")
                 else:
                     result = payload
         except GiltoError as exc:
             placeholder.empty()
             st.error(str(exc))
-            st.session_state.messages.pop()  # drop the unanswered question
-            return
-        placeholder.markdown(result.answer)
+            return  # nothing is saved, so a failed or interrupted turn leaves no orphan question
+        placeholder.markdown(ui.pretty_citations(result.answer))
         render_sources(result.sources)
 
+    st.session_state.messages.append({"role": "user", "content": question})
     st.session_state.messages.append(
         {"role": "assistant", "content": result.answer, "sources": result.sources}
     )
