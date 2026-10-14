@@ -1,6 +1,16 @@
 """Gilto: chat with your own documents. UI only; the logic lives in rag/."""
 from __future__ import annotations
 
+import os
+import sys
+
+try:  # Community Cloud can ship an old SQLite that Chroma rejects. Use the bundled one when it is installed.
+    import pysqlite3
+
+    sys.modules["sqlite3"] = pysqlite3
+except ImportError:
+    pass
+
 import streamlit as st
 
 import ui
@@ -190,6 +200,9 @@ def sidebar(
         line = quota_line(guard, user)
         if line:
             st.caption(line)
+        notice = os.getenv("DEMO_NOTICE")
+        if notice:
+            st.warning(notice)
 
         ui.label("Add documents")
         consented = db.has_consent(user)

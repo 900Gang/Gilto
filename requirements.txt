@@ -7,3 +7,4 @@ streamlit>=1.42
 Authlib>=1.3.2
 python-dotenv>=1.0
 pytest>=8.0
+pysqlite3-binary; sys_platform == "linux"
