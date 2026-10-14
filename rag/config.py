@@ -31,7 +31,10 @@ class Settings:
     fast_model: str
     fallback_model: str
     chroma_path: str
-    embedding_model: str
+    embedding_provider: str
+    embedding_model: str  # the local model, used when embedding_provider is "local"
+    gemini_embedding_model: str
+    embedding_dimensions: int
     max_file_mb: int
     max_pages_per_file: int
     max_docs_per_user: int
@@ -57,20 +60,28 @@ class Settings:
 
     @classmethod
     def from_env(cls) -> "Settings":
+        provider = os.getenv("EMBEDDING_PROVIDER", "gemini").strip().lower()
+        if provider not in ("gemini", "local"):
+            raise ValueError("EMBEDDING_PROVIDER must be 'gemini' or 'local'.")
         return cls(
             api_key=os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY", ""),
             model=os.getenv("GEMINI_MODEL", "gemini-3.8-flash"),
             fast_model=os.getenv("GEMINI_FAST_MODEL", "gemini-3.5-flash-lite"),
             fallback_model=os.getenv("GEMINI_FALLBACK_MODEL", "gemini-3.6-flash"),
             chroma_path=os.getenv("CHROMA_PATH", "./chroma_db"),
+            embedding_provider=provider,
             embedding_model=os.getenv("EMBEDDING_MODEL", "intfloat/multilingual-e5-small"),
+            gemini_embedding_model=os.getenv("GEMINI_EMBEDDING_MODEL", "gemini-embedding-001"),
+            embedding_dimensions=_int("EMBEDDING_DIMENSIONS", 768),
             max_file_mb=_int("MAX_FILE_MB", 20),
             max_pages_per_file=_int("MAX_PAGES_PER_FILE", 100),
             max_docs_per_user=_int("MAX_DOCS_PER_USER", 15),
             max_total_pages=_int("MAX_TOTAL_PAGES", 500),
             chunk_size=_int("CHUNK_SIZE", 800),
             chunk_overlap=_int("CHUNK_OVERLAP", 150),
-            similarity_threshold=_float("SIMILARITY_THRESHOLD", 0.80),
+            # Each embedding model spreads its similarity scores differently, so the
+            # default depends on the provider. The Gemini value was measured on a small sample (relevant >= 0.65, unrelated <= 0.54).
+            similarity_threshold=_float("SIMILARITY_THRESHOLD", 0.80 if provider == "local" else 0.60),
             min_page_chars=_int("MIN_PAGE_CHARS", 50),
             history_turns=_int("HISTORY_TURNS", 4),
             ocr_confidence_threshold=_float("OCR_CONFIDENCE_THRESHOLD", 60.0),

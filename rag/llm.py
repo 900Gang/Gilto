@@ -106,12 +106,14 @@ class GeminiLLM(LLM):
         raise AssertionError("unreachable")
 
     def stream(self, system: str, messages: list[dict]) -> Iterator[str]:
-        """Retry transient failures with backoff, then try the fallback model once.
+        """Retry transient failures with backoff, then try the fallback model once,
+        then the fast model as a last resort.
         A quota error (429) skips straight to the fallback model, because quotas are
         per model and waiting does not help. Nothing is retried once text has streamed."""
         models = [self._model] * MAIN_ATTEMPTS
-        if self._fallback_model and self._fallback_model != self._model:
-            models.append(self._fallback_model)
+        for backup in (self._fallback_model, self._fast_model):  # the fast model is the last resort
+            if backup and backup not in models:
+                models.append(backup)
         config = types.GenerateContentConfig(system_instruction=system, max_output_tokens=ANSWER_MAX_TOKENS)
         contents = self._contents(messages)
 

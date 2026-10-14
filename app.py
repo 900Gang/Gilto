@@ -8,7 +8,7 @@ from rag.auth import AccessError, check_access, parse_allowed
 from rag.chain import Chain
 from rag.config import Settings
 from rag.db import Database
-from rag.embedder import E5Embedder
+from rag.embedder import Embedder, embedding_tag, make_embedder
 from rag.errors import ConfigError, GiltoError, LimitError
 from rag.indexer import BlockingIndexer
 from rag.limits import QuotaGuard
@@ -25,16 +25,15 @@ def get_settings() -> Settings:
     return Settings.from_env()
 
 
-@st.cache_resource(show_spinner="Loading the embedding model (first run downloads it)...")
-def get_embedder() -> E5Embedder:
-    embedder = E5Embedder(get_settings().embedding_model)
-    embedder.embed_query("warm up")
-    return embedder
+@st.cache_resource
+def get_embedder() -> Embedder:
+    return make_embedder(get_settings())
 
 
 @st.cache_resource
 def get_store() -> VectorStore:
-    return VectorStore(path=get_settings().chroma_path)
+    settings = get_settings()
+    return VectorStore(path=settings.chroma_path, tag=embedding_tag(settings))
 
 
 @st.cache_resource
@@ -294,7 +293,11 @@ def main() -> None:
     db = get_db()
     db.upsert_user(user)
     store = get_store()
-    embedder = get_embedder()
+    try:
+        embedder = get_embedder()
+    except ConfigError as exc:
+        st.error(str(exc))
+        st.stop()
     ocr = get_ocr()
     cache = get_cache()
     indexer = BlockingIndexer(store, embedder, settings, ocr=ocr, cache=cache)

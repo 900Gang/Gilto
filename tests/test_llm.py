@@ -135,7 +135,7 @@ def test_persistent_503_ends_in_friendly_error():
     models = FakeModels(error=FakeAPIError(503, "high demand"))
     with pytest.raises(LLMError, match="busy"):
         list(make(models, fallback="backup-model").stream("sys", [{"role": "user", "content": "hi"}]))
-    assert len(models.stream_calls) == 4
+    assert len(models.stream_calls) == 5  # main x3, backup, then the fast model
 
 
 def test_non_transient_error_is_not_retried():
@@ -213,16 +213,32 @@ def test_quota_error_skips_retries_and_uses_fallback_model():
 
 
 def test_quota_on_every_model_gives_rate_limit_message():
-    models = PerModelModels([Chunk("ok")], {"main-model", "backup-model"}, FakeAPIError(429, "quota"))
+    models = PerModelModels(
+        [Chunk("ok")], {"main-model", "backup-model", "fast-model"}, FakeAPIError(429, "quota")
+    )
     llm = GeminiLLM("key", "main-model", "fast-model", "backup-model", client=FakeClient(models), sleep=lambda s: None)
     with pytest.raises(LLMError, match="rate limit"):
         list(llm.stream("sys", [{"role": "user", "content": "hi"}]))
-    assert len(models.stream_calls) == 2
+    assert [c["model"] for c in models.stream_calls] == ["main-model", "backup-model", "fast-model"]
 
 
-def test_quota_without_a_fallback_model_fails_after_one_call():
+def test_quota_without_a_fallback_model_goes_straight_to_the_fast_model():
     models = PerModelModels([Chunk("ok")], {"main-model"}, FakeAPIError(429, "quota"))
     llm = GeminiLLM("key", "main-model", "fast-model", "", client=FakeClient(models), sleep=lambda s: None)
+    assert list(llm.stream("sys", [{"role": "user", "content": "hi"}])) == ["ok"]
+    assert [c["model"] for c in models.stream_calls] == ["main-model", "fast-model"]
+
+
+def test_fast_model_is_the_last_resort_when_the_others_are_busy():
+    models = PerModelModels([Chunk("ok")], {"main-model", "backup-model"}, FakeAPIError(503, "busy"))
+    llm = GeminiLLM("key", "main-model", "fast-model", "backup-model", client=FakeClient(models), sleep=lambda s: None)
+    assert list(llm.stream("sys", [{"role": "user", "content": "hi"}])) == ["ok"]
+    assert [c["model"] for c in models.stream_calls] == ["main-model"] * 3 + ["backup-model", "fast-model"]
+
+
+def test_a_model_is_not_tried_twice_when_the_fast_model_is_also_the_main_model():
+    models = PerModelModels([Chunk("ok")], {"same"}, FakeAPIError(429, "quota"))
+    llm = GeminiLLM("key", "same", "same", "", client=FakeClient(models), sleep=lambda s: None)
     with pytest.raises(LLMError, match="rate limit"):
         list(llm.stream("sys", [{"role": "user", "content": "hi"}]))
     assert len(models.stream_calls) == 1

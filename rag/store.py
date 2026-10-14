@@ -1,4 +1,4 @@
-"""Chroma wrapper. One collection per user, plus a user_id filter on every read."""
+"""Chroma wrapper. One collection per user and embedding model, plus a user_id filter on every read."""
 from __future__ import annotations
 
 import hashlib
@@ -32,16 +32,21 @@ class DocInfo:
 
 
 class VectorStore:
-    def __init__(self, path: str | None = None, client=None) -> None:
+    def __init__(self, path: str | None = None, client=None, tag: str = "") -> None:
         if client is None:
             if path is None:
                 raise ValueError("VectorStore needs a path or a client")
             client = chromadb.PersistentClient(path=path)
         self._client = client
+        self._tag = tag  # names the embedding model, so incompatible vectors never mix
 
     @staticmethod
-    def _name(user_id: str) -> str:
+    def _base(user_id: str) -> str:
         return "u_" + hashlib.sha256(user_id.encode()).hexdigest()[:32]
+
+    def _name(self, user_id: str) -> str:
+        base = self._base(user_id)
+        return f"{base}_{self._tag}" if self._tag else base
 
     def _collection(self, user_id: str):
         return self._client.get_or_create_collection(name=self._name(user_id), metadata={"hnsw:space": "cosine"})
@@ -66,11 +71,12 @@ class VectorStore:
         )
 
     def delete_user(self, user_id: str) -> None:
-        """Drop everything stored for a user. Does nothing if they have no data."""
-        name = self._name(user_id)
-        existing = {c if isinstance(c, str) else c.name for c in self._client.list_collections()}
-        if name in existing:
-            self._client.delete_collection(name)
+        """Drop everything stored for a user, under every embedding tag. Does nothing if they have no data."""
+        base = self._base(user_id)
+        for entry in self._client.list_collections():
+            name = entry if isinstance(entry, str) else entry.name
+            if name == base or name.startswith(base + "_"):
+                self._client.delete_collection(name)
 
     def query(
         self,

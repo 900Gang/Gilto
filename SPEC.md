@@ -30,7 +30,7 @@ This spec records decisions made in a design review. Each decision has an ID (D1
   3. Pages below the confidence threshold, pages with under 50 characters, and pages where Tesseract reads Hindi (Devanagari) escalate to Gemini vision (the fast model). Hindi always escalates because Tesseract reports high confidence on Hindi even when its words are wrong. If Tesseract is not installed, every scanned page goes to vision. If Gemini is unavailable, the Tesseract text is kept and flagged as low confidence.
   4. Each chunk carries `source_type`: `text`, `ocr`, or `vision`. The Sources panel shows it.
   5. OCR results are cached by file hash and page number so a retry never pays twice.
-- **D9 Languages.** English and Hindi. Embedding model `multilingual-e5-small` (needs `query: ` and `passage: ` prefixes, handled inside the `Embedder`). Tesseract packs `eng` and `hin`. Answers come back in the language of the question.
+- **D9 Languages.** English and Hindi. Embeddings come from the Gemini API model `gemini-embedding-001` at 768 dimensions (`rag/embedder.py`): `RETRIEVAL_DOCUMENT` for chunks, `RETRIEVAL_QUERY` for questions, vectors scaled to unit length, batches of 50 texts, rate limits and server errors retried. The local `multilingual-e5-small` model remains as `EMBEDDING_PROVIDER=local` (it needs `query: ` and `passage: ` prefixes, handled inside the `Embedder`, and about 1.2 GB of RAM). Each embedding model has its own Chroma collections, named with a tag such as `gemini-embedding-001-768`, because vectors from different models cannot be compared. The default similarity threshold depends on the model: 0.60 for Gemini embeddings and 0.80 for the local model. This changed the original D9 choice of a local model, which ran out of memory on the development machine. Tesseract packs `eng` and `hin`. Answers come back in the language of the question.
 - **Chunking.** Recursive splitter, about 800 characters, 150 overlap. Metadata per chunk: user_id, doc_id, filename, page, chunk_index, source_type.
 - **D11 Ingestion flow.** Blocking in v1, with a per-page progress bar. Indexing sits behind an `Indexer` interface so a background worker can replace it later without UI changes.
 
@@ -48,7 +48,7 @@ This spec records decisions made in a design review. Each decision has an ID (D1
 ## 5. Models and cost
 
 - **D7 Models.** Env vars, never hardcoded. Defaults: `GEMINI_MODEL=gemini-3.8-flash` for answers, `GEMINI_FAST_MODEL=gemini-3.5-flash-lite` for query rewrite and vision OCR, `GEMINI_FALLBACK_MODEL=gemini-3.6-flash` as a backup for answers. `GEMINI_API_KEY` (or `GOOGLE_API_KEY`) from env only, never in a tracked file.
-- **Reliability.** Gemini returns transient 500/503/504 errors under load. Answer generation retries up to 3 times with backoff (1 s, 2 s), then tries the fallback model once. Retries happen only before any text has streamed. A quota error (429) skips straight to the fallback model, because Gemini quotas are per model. Other errors (bad key) are not retried and show a plain-language message. Vision OCR and the summary map step also retry rate limits and server errors up to 3 times.
+- **Reliability.** Gemini returns transient 500/503/504 errors under load. Answer generation retries up to 3 times with backoff (1 s, 2 s), then tries the fallback model once, then the fast model as a last resort (cheaper and sometimes lower quality, and the app does not say which model answered). Retries happen only before any text has streamed. A quota error (429) skips straight to the next model, because Gemini quotas are per model. Other errors (bad key) are not retried and show a plain-language message. Vision OCR and the summary map step also retry rate limits and server errors up to 3 times.
 - **Budget.** An app-wide monthly token cap (`MONTHLY_TOKEN_CAP`, default 5,000,000) instead of a money cap, so no price table is needed. Tokens are estimated at 3 characters each, and vision OCR calls are not counted. At the cap, users see a friendly "limit reached" message, not a crash.
 - **D15 Per-user limits.** Hourly question limit (default 30) and daily token limit (default 200,000), tracked in the `usage` table. Remaining quota shows in the sidebar.
 
@@ -60,7 +60,7 @@ This spec records decisions made in a design review. Each decision has an ID (D1
 
 ## 7. Deployment
 
-- **D18 Target.** Render web service with a persistent disk, built from a `Dockerfile` and described in `render.yaml`. The image has Tesseract with `eng` and `hin`, CPU-only PyTorch, and the embedding model baked in. `start.sh` copies Render's secret file `/etc/secrets/secrets.toml` to `.streamlit/secrets.toml` and starts Streamlit on `$PORT`. HTTPS comes from Render, which Google login requires. Chroma, the OCR cache and SQLite live on the disk mounted at `/data`. `GEMINI_API_KEY` and `ALLOWED_EMAILS` are set in the Render dashboard, and the Google `[auth]` block goes in a Render secret file. Sizing: the embedding model plus PyTorch needs about 1.2 GB of RAM, so the plan must have at least 2 GB (`render.yaml` uses `standard`), and persistent disks need a paid plan. Custom domain later.
+- **D18 Target.** Render web service with a persistent disk, built from a `Dockerfile` and described in `render.yaml`. The image has Tesseract with `eng` and `hin`. It has no PyTorch or local model, because embeddings use the Gemini API. `start.sh` copies Render's secret file `/etc/secrets/secrets.toml` to `.streamlit/secrets.toml` and starts Streamlit on `$PORT`. HTTPS comes from Render, which Google login requires. Chroma, the OCR cache and SQLite live on the disk mounted at `/data`. `GEMINI_API_KEY` and `ALLOWED_EMAILS` are set in the Render dashboard, and the Google `[auth]` block goes in a Render secret file. Sizing: without a local model the service is small, so `render.yaml` uses `starter` (about 512 MB). Change it to `standard` if it runs out of memory. Persistent disks need a paid plan. Custom domain later.
 
 ## 8. Quality bar
 
@@ -91,7 +91,7 @@ rag/
   loader.py             # PDF/image -> pages with metadata
   ocr.py                # Tesseract + vision fallback + cache
   chunker.py
-  embedder.py           # Embedder interface + multilingual-e5-small
+  embedder.py           # Embedder interface, Gemini embeddings, optional local e5 model
   store.py              # Chroma wrapper, per-user collections, all_chunks for keyword search and summaries
   bm25.py               # in-memory keyword search
   fusion.py             # reciprocal rank fusion
@@ -110,6 +110,7 @@ start.sh                # container entry point
 render.yaml             # Render blueprint
 .dockerignore
 requirements.txt
+requirements-local.txt   # adds sentence-transformers for EMBEDDING_PROVIDER=local
 .env.example
 .streamlit/secrets.toml.example
 README.md
@@ -119,7 +120,8 @@ README.md
 
 - Google sign-in (D2, D16) is covered by unit tests and a no-credentials screen check, but it was not tried end to end with real Google credentials.
 - The Dockerfile and `render.yaml` were never built or deployed. Docker was not available where they were written.
-- The eval suite was not run against the real embedding model. The machine it was developed on was short of memory.
+- The eval suite passed on the built-in 9-question sample with Gemini embeddings, but with answers from `gemini-3.5-flash-lite` because the main models were rate limited at the time. It has not been run on real documents or with the main model.
+- The Gemini similarity threshold (0.60) was set from about 16 measured queries. Measure again on real documents.
 - Hindi OCR quality was not checked on a real Hindi scan.
 - Hybrid search was checked with a stand-in embedder that makes vector search find nothing, so the keyword path was proven alone. The fused ranking with real vectors is covered only by unit tests.
 - The model IDs in D7 come from Google's model list at the time of writing and may need updating.

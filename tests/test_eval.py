@@ -28,7 +28,7 @@ from conftest import make_pdf
 
 from rag.chain import NOT_FOUND, Chain
 from rag.config import Settings
-from rag.embedder import E5Embedder
+from rag.embedder import embedding_tag, make_embedder
 from rag.errors import LLMError
 from rag.indexer import BlockingIndexer
 from rag.llm import make_llm
@@ -85,8 +85,8 @@ def stack(tmp_path_factory):
     settings = Settings.from_env()
     if not settings.api_key:
         pytest.skip("GEMINI_API_KEY is not set")
-    store = VectorStore(path=str(tmp_path_factory.mktemp("eval_chroma")))
-    embedder = E5Embedder(settings.embedding_model)
+    store = VectorStore(path=str(tmp_path_factory.mktemp("eval_chroma")), tag=embedding_tag(settings))
+    embedder = make_embedder(settings)
     indexer = BlockingIndexer(store, embedder, settings)
     chain = Chain(make_llm(settings), store, embedder, settings)
     return indexer, chain
