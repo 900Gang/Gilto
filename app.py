@@ -27,7 +27,16 @@ from rag.ocr import OCRCache, build_ocr
 from rag.retention import delete_user_data, purge_inactive
 from rag.store import Retrieved, VectorStore
 
-st.set_page_config(page_title="Gilto", layout="wide")
+st.set_page_config(
+    page_title="Gilto",
+    page_icon=":material/description:",
+    layout="wide",
+    initial_sidebar_state="expanded",
+)
+
+USER_AVATAR = ":material/person:"
+BOT_AVATAR = ":material/auto_awesome:"
+SUGGESTIONS = ["Summarize my documents", "What are the key points?", "What is this document about?"]
 
 
 @st.cache_resource
@@ -90,21 +99,28 @@ def require_user(settings: Settings) -> str:
     if settings.auth_disabled:
         return "local"  # local testing only, set with AUTH_DISABLED=true
     if not auth_configured():
-        ui.login_screen(
+        with ui.auth_card(
             "Sign-in is not set up",
             "Add an [auth] section to .streamlit/secrets.toml, or set AUTH_DISABLED=true in .env for local testing only.",
-        )
+            tone="danger",
+        ):
+            pass
         st.stop()
     if not st.user.is_logged_in:
-        ui.login_screen()
-        st.button("Sign in with Google", type="primary", on_click=st.login)
+        with ui.auth_card(
+            "Restricted access",
+            "Sign in with an approved Google account to chat with your documents. "
+            "Every answer cites the page it came from.",
+            footnote="Access is limited to approved accounts. Your documents stay private to you.",
+        ):
+            st.button("Continue with Google ↗", type="primary", on_click=st.login)
         st.stop()
     claims = st.user.to_dict()
     try:
         return check_access(claims.get("email"), claims.get("email_verified"), parse_allowed(settings.allowed_emails))
     except AccessError as exc:
-        ui.login_screen("Access denied", str(exc))
-        st.button("Sign out", on_click=st.logout)
+        with ui.auth_card("Access denied", str(exc), tone="danger"):
+            st.button("Sign out", on_click=st.logout)
         st.stop()
 
 
@@ -129,12 +145,21 @@ def render_sources(sources: list[Retrieved]) -> None:
 
 
 def render_message(message: dict) -> None:
-    with st.chat_message(message["role"]):
-        if message["role"] == "assistant":
+    if message["role"] == "assistant":
+        with st.chat_message("assistant", avatar=BOT_AVATAR):
             st.markdown(ui.pretty_citations(message["content"]))
             render_sources([Retrieved.from_dict(d) for d in message.get("sources") or []])
-        else:
+    else:
+        with st.chat_message("user", avatar=USER_AVATAR):
             st.markdown(message["content"])
+
+
+def render_suggestions() -> None:
+    with st.container(key="suggestions"):
+        for index, text in enumerate(SUGGESTIONS):
+            if st.button(f"› {text}", key=f"suggest_{index}"):
+                st.session_state.pending_question = text
+                st.rerun()
 
 
 def index_uploads(files, indexer: BlockingIndexer, user: str) -> None:
@@ -155,7 +180,11 @@ def index_uploads(files, indexer: BlockingIndexer, user: str) -> None:
                 st.session_state.notices.append(("info", f"{file.name}: already in your library."))
             else:
                 st.session_state.notices.append(
-                    ("success", f"{file.name}: added ({result.pages_indexed} pages, {result.chunks} chunks).")
+                    (
+                        "success",
+                        f"{file.name}: added ({ui.plural(result.pages_indexed, 'page')}, "
+                        f"{ui.plural(result.chunks, 'passage')}).",
+                    )
                 )
                 scanned = result.ocr_pages + result.vision_pages
                 if scanned:
@@ -175,14 +204,17 @@ def index_uploads(files, indexer: BlockingIndexer, user: str) -> None:
         bar.empty()
 
 
-def quota_line(guard: QuotaGuard, user: str) -> str:
+def usage_rows(guard: QuotaGuard, settings: Settings, user: str) -> tuple[list[tuple[str, float, str]], bool]:
+    """Bars for the System status panel, and whether any quota is nearly used up."""
     status = guard.status(user)
-    parts = []
-    if status.questions_left is not None:
-        parts.append(f"{status.questions_left} questions left this hour")
-    if status.tokens_left is not None:
-        parts.append(f"{status.tokens_left:,} tokens left today")
-    return " · ".join(parts)
+    rows: list[tuple[str, float, str]] = []
+    if status.questions_left is not None and settings.hourly_question_limit > 0:
+        used = 1 - status.questions_left / settings.hourly_question_limit
+        rows.append(("Questions", used, f"{status.questions_left} left"))
+    if status.tokens_left is not None and settings.daily_token_limit > 0:
+        used = 1 - status.tokens_left / settings.daily_token_limit
+        rows.append(("Tokens", used, f"{status.tokens_left:,} left"))
+    return rows, any(used >= 0.9 for _, used, _ in rows)
 
 
 def sidebar(
@@ -197,14 +229,14 @@ def sidebar(
 ) -> int:
     with st.sidebar:
         ui.brand()
-        line = quota_line(guard, user)
-        if line:
-            st.caption(line)
         notice = os.getenv("DEMO_NOTICE")
         if notice:
             st.warning(notice)
+        rows, low = usage_rows(guard, settings, user)
+        if rows:
+            ui.usage_panel(rows, low)
 
-        ui.label("Add documents")
+        ui.label("Documents", 1)
         consented = db.has_consent(user)
         if not consented:
             agreed = st.checkbox(
@@ -224,7 +256,7 @@ def sidebar(
         )
         if not ocr_ready:
             st.caption("Scanned files need OCR: install Tesseract or set GEMINI_API_KEY.")
-        if st.button("Add to library", disabled=not (files and consented), type="primary"):
+        if st.button("Add to library ↗", disabled=not (files and consented), type="primary"):
             index_uploads(files, indexer, user)
             st.session_state.uploader_key += 1
             st.rerun()
@@ -233,16 +265,16 @@ def sidebar(
             getattr(st, level)(message)
         st.session_state.notices = []
 
-        ui.label("Library")
         docs = store.list_docs(user)
-        if not docs:
-            st.caption("No documents yet.")
-        for doc in docs:
-            left, right = st.columns([5, 1], vertical_alignment="center")
-            left.markdown(ui.doc_card(doc.filename, doc.page_count, doc.chunks), unsafe_allow_html=True)
-            if right.button("✕", key=f"del_{doc.doc_id}", help=f"Remove {doc.filename}"):
-                indexer.forget(user, doc.doc_id)
-                st.rerun()
+        with st.container(key="library"):
+            if not docs:
+                st.caption("No documents yet.")
+            for doc in docs:
+                left, right = st.columns([5, 1], vertical_alignment="center")
+                left.markdown(ui.doc_card(doc.filename, doc.page_count, doc.chunks), unsafe_allow_html=True)
+                if right.button("✕", key=f"del_{doc.doc_id}", help=f"Remove {doc.filename}"):
+                    indexer.forget(user, doc.doc_id)
+                    st.rerun()
 
         ids = [d.doc_id for d in docs]
         names = {d.doc_id: d.filename for d in docs}
@@ -258,22 +290,29 @@ def sidebar(
                 label_visibility="collapsed",
             )
 
-        ui.label("Chats")
-        if st.button("New chat", disabled=st.session_state.conversation_id is None):
-            st.session_state.conversation_id = None
-            st.rerun()
-        for conv in db.list_conversations(user):
-            left, right = st.columns([5, 1], vertical_alignment="center")
-            active = conv.id == st.session_state.conversation_id
-            if left.button(conv.title, key=f"conv_{conv.id}", type="primary" if active else "secondary"):
-                st.session_state.conversation_id = conv.id
+        ui.label("Chats", 2)
+        with st.container(key="chats"):
+            if st.button("+ New chat", disabled=st.session_state.conversation_id is None):
+                st.session_state.conversation_id = None
                 st.rerun()
-            if right.button("✕", key=f"delc_{conv.id}", help="Delete this chat"):
-                db.delete_conversation(user, conv.id)
-                if active:
-                    st.session_state.conversation_id = None
-                st.rerun()
+            for conv in db.list_conversations(user):
+                left, right = st.columns([5, 1], vertical_alignment="center")
+                active = conv.id == st.session_state.conversation_id
+                if left.button(
+                    ui.chat_title(conv.title),
+                    key=f"conv_{conv.id}",
+                    type="primary" if active else "secondary",
+                    help=conv.title,
+                ):
+                    st.session_state.conversation_id = conv.id
+                    st.rerun()
+                if right.button("✕", key=f"delc_{conv.id}", help="Delete this chat"):
+                    db.delete_conversation(user, conv.id)
+                    if active:
+                        st.session_state.conversation_id = None
+                    st.rerun()
 
+        ui.label("System", 3)
         with st.expander("Settings"):
             top_k = st.slider("Passages to retrieve", 1, 10, 5)
 
@@ -293,6 +332,7 @@ def sidebar(
                     st.logout()
 
         ui.note("Document text, and page images read by Gemini vision, are sent to Google's Gemini API.")
+        ui.hazard()
     return top_k
 
 
@@ -317,7 +357,17 @@ def main() -> None:
     guard = QuotaGuard(db, settings)
     top_k = sidebar(user, settings, db, guard, indexer, store, cache, ocr is not None)
 
-    st.title("Ask your documents")
+    docs = store.list_docs(user)
+    ui.status_strip(
+        [("Sys", "online"), ("Search", "hybrid" if settings.hybrid_search else "vector"), ("User", user)]
+    )
+    chips: list[str] = []
+    if docs:
+        chips = [ui.plural(len(docs), "document"), ui.plural(sum(d.page_count for d in docs), "page")]
+        scope = st.session_state.scope
+        if scope and len(docs) > 1:
+            chips.append(f"Searching {len(scope)} of {len(docs)}")
+    ui.header("Ask your documents", chips, eyebrow="Workspace", tagline="Answers come only from your files.")
 
     chain = None
     try:
@@ -325,21 +375,23 @@ def main() -> None:
     except ConfigError as exc:
         st.error(str(exc))
 
-    docs = store.list_docs(user)
-    if docs:
-        pages = sum(d.page_count for d in docs)
-        ui.subtitle(f"{len(docs)} document{'s' if len(docs) != 1 else ''} · {pages} pages. Answers cite the page they came from.")
-    else:
+    if not docs:
         ui.empty_state()
 
     conv_id = st.session_state.conversation_id
     if conv_id is not None and not db.conversation_exists(user, conv_id):
         conv_id = st.session_state.conversation_id = None
     messages = db.get_messages(user, conv_id) if conv_id is not None else []
+    pending = st.session_state.pop("pending_question", None)  # a starter question that was just clicked
     for message in messages:
         render_message(message)
 
-    question = st.chat_input("Ask about your documents", disabled=not (docs and chain))
+    if docs and chain and not messages and not pending:
+        ui.welcome()
+        render_suggestions()
+
+    typed = st.chat_input("Ask about your documents", disabled=not (docs and chain))
+    question = typed or pending
     if not question:
         return
 
@@ -351,11 +403,12 @@ def main() -> None:
 
     doc_ids = st.session_state.scope or None
     history = [{"role": m["role"], "content": m["content"]} for m in messages]
-    with st.chat_message("user"):
+    with st.chat_message("user", avatar=USER_AVATAR):
         st.markdown(question)
 
-    with st.chat_message("assistant"):
+    with st.chat_message("assistant", avatar=BOT_AVATAR):
         placeholder = st.empty()
+        placeholder.markdown("_Searching your documents…_")
         streamed = ""
         result = None
         try:
