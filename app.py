@@ -34,8 +34,6 @@ st.set_page_config(
     initial_sidebar_state="expanded",
 )
 
-USER_AVATAR = ":material/person:"
-BOT_AVATAR = ":material/auto_awesome:"
 SUGGESTIONS = ["Summarize my documents", "What are the key points?", "What is this document about?"]
 
 
@@ -146,11 +144,11 @@ def render_sources(sources: list[Retrieved]) -> None:
 
 def render_message(message: dict) -> None:
     if message["role"] == "assistant":
-        with st.chat_message("assistant", avatar=BOT_AVATAR):
+        with st.chat_message("assistant"):
             st.markdown(ui.pretty_citations(message["content"]))
             render_sources([Retrieved.from_dict(d) for d in message.get("sources") or []])
     else:
-        with st.chat_message("user", avatar=USER_AVATAR):
+        with st.chat_message("user"):
             st.markdown(message["content"])
 
 
@@ -403,10 +401,10 @@ def main() -> None:
 
     doc_ids = st.session_state.scope or None
     history = [{"role": m["role"], "content": m["content"]} for m in messages]
-    with st.chat_message("user", avatar=USER_AVATAR):
+    with st.chat_message("user"):
         st.markdown(question)
 
-    with st.chat_message("assistant", avatar=BOT_AVATAR):
+    with st.chat_message("assistant"):
         placeholder = st.empty()
         placeholder.markdown("_Searching your documents…_")
         streamed = ""

@@ -55,7 +55,7 @@ header[data-testid="stHeader"] { background: transparent; }
 }
 .stButton > button:hover { border-color: var(--lime); color: var(--lime); }
 .stButton > button:focus-visible { outline: 2px solid var(--lime); outline-offset: 2px; }
-.stButton > button:disabled { opacity: .4; }
+.stButton > button:disabled { opacity: .55; }
 .stButton > button[kind="primary"], .stButton > button[data-testid="stBaseButton-primary"] {
   background: var(--lime); border-color: var(--lime); color: var(--ink) !important;
 }
@@ -70,14 +70,14 @@ header[data-testid="stHeader"] { background: transparent; }
 /* ---- corner-bracket panels ---- */
 .g-panel { position: relative; border: 1px solid var(--line); background: var(--panel); }
 .g-panel::before, .g-panel::after,
-[data-testid="stVerticalBlockBorderWrapper"]:has(.g-auth-title)::before,
-[data-testid="stVerticalBlockBorderWrapper"]:has(.g-auth-title)::after {
+[data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .g-auth-title)::before,
+[data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .g-auth-title)::after {
   content: ""; position: absolute; width: 9px; height: 9px; pointer-events: none;
 }
-.g-panel::before, [data-testid="stVerticalBlockBorderWrapper"]:has(.g-auth-title)::before {
+.g-panel::before, [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .g-auth-title)::before {
   top: -1px; left: -1px; border-top: 2px solid var(--lime); border-left: 2px solid var(--lime);
 }
-.g-panel::after, [data-testid="stVerticalBlockBorderWrapper"]:has(.g-auth-title)::after {
+.g-panel::after, [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .g-auth-title)::after {
   bottom: -1px; right: -1px; border-bottom: 2px solid var(--lime); border-right: 2px solid var(--lime);
 }
 
@@ -85,7 +85,7 @@ header[data-testid="stHeader"] { background: transparent; }
 .g-logo-box { display: inline-block; background: var(--lime); color: var(--ink); font-family: var(--display);
   font-weight: 700; letter-spacing: .06em; padding: .3rem .8rem; font-size: 1.05rem; }
 .g-tagline { color: var(--muted); font-size: .76rem; letter-spacing: .04em; margin: .35rem 0 .5rem; }
-.g-label { text-transform: uppercase; font-size: .68rem; letter-spacing: .16em; color: var(--muted); margin: 1.1rem 0 .15rem; }
+.g-label { text-transform: uppercase; font-size: .68rem; letter-spacing: .16em; color: var(--muted); margin: 1.5rem 0 .2rem; }
 .g-label b { color: var(--lime); font-weight: 700; margin-right: .55rem; }
 .g-note { color: #6C7263; font-size: .7rem; line-height: 1.45; margin-top: .8rem; }
 .g-hazard { height: 10px; margin-top: 1.2rem;
@@ -165,9 +165,9 @@ header[data-testid="stHeader"] { background: transparent; }
 .g-source-text { color: #B9BDAF; font-size: .78rem; margin-top: .45rem; white-space: pre-wrap; line-height: 1.5; }
 
 /* ---- sign-in card ---- */
-[data-testid="stVerticalBlockBorderWrapper"]:has(.g-auth-title) { position: relative; border: 1px solid var(--line);
-  background: var(--panel); border-radius: 0; padding: 1.4rem 1.2rem 1.2rem; }
-[data-testid="stVerticalBlockBorderWrapper"]:has(.g-auth-title) .stButton > button { width: 100%; padding: .65rem 1rem; }
+[data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .g-auth-title) { position: relative; border: 1px solid var(--line);
+  background: var(--panel); border-radius: 0 !important; padding: 1.4rem 1.2rem 1.2rem; }
+[data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .g-auth-title) .stButton > button { width: 100%; padding: .65rem 1rem; }
 .g-auth-spacer { height: 4vh; }
 .g-auth-title { font-family: var(--display); font-weight: 700; font-size: 1.5rem; letter-spacing: .02em;
   text-transform: uppercase; margin: 1.2rem 0 .4rem; }
