@@ -35,37 +35,42 @@ header[data-testid="stHeader"] { background: transparent; }
 [data-testid="stBottomBlockContainer"] { max-width: 840px !important; margin: 0 auto; }
 [data-testid="stSidebar"] { background: #0D0F0B; border-right: 1px solid var(--line); }
 [data-testid="stSidebar"] [data-testid="stVerticalBlock"] { gap: .55rem; }
-[data-testid="stSidebar"] .stButton > button { width: 100%; }
+[data-testid="stSidebar"] .stButton button { width: 100%; }
 *::-webkit-scrollbar { width: 8px; height: 8px; }
 *::-webkit-scrollbar-track { background: transparent; }
 *::-webkit-scrollbar-thumb { background: var(--line); }
 *::-webkit-scrollbar-thumb:hover { background: var(--lime); }
 
 /* ---- square everything ---- */
-.stButton > button, [data-testid="stExpander"], [data-testid="stExpander"] details,
+.stButton button, [data-testid="stExpander"], [data-testid="stExpander"] details,
 [data-testid="stChatInput"], [data-testid="stChatInput"] textarea, [data-testid="stFileUploaderDropzone"],
 [data-testid="stAlert"], [data-baseweb="select"] > div, [data-baseweb="tag"],
 [data-testid="stChatInputSubmitButton"] { border-radius: 0 !important; }
 
 /* ---- buttons ---- */
-.stButton > button {
+.stButton button {
   text-transform: uppercase; letter-spacing: .07em; font-size: .74rem; font-weight: 600;
   background: transparent; color: var(--text); border: 1px solid var(--lime-dim);
   transition: border-color .12s, color .12s, background .12s;
 }
-.stButton > button:hover { border-color: var(--lime); color: var(--lime); }
-.stButton > button:focus-visible { outline: 2px solid var(--lime); outline-offset: 2px; }
-.stButton > button:disabled { opacity: .55; }
-.stButton > button[kind="primary"], .stButton > button[data-testid="stBaseButton-primary"] {
+.stButton button:hover { border-color: var(--lime); color: var(--lime); }
+.stButton button:focus-visible { outline: 2px solid var(--lime); outline-offset: 2px; }
+.stButton button:disabled { opacity: .55; }
+.stButton button[kind="primary"], .stButton button[data-testid="stBaseButton-primary"] {
   background: var(--lime); border-color: var(--lime); color: var(--ink) !important;
 }
-.stButton > button[kind="primary"] p, .stButton > button[data-testid="stBaseButton-primary"] p { color: var(--ink) !important; }
-.stButton > button[kind="primary"]:hover, .stButton > button[data-testid="stBaseButton-primary"]:hover {
+.stButton button[kind="primary"] p, .stButton button[data-testid="stBaseButton-primary"] p { color: var(--ink) !important; }
+.stButton button[kind="primary"]:hover, .stButton button[data-testid="stBaseButton-primary"]:hover {
   background: #DDFF4A; border-color: #DDFF4A; color: var(--ink) !important;
 }
 [data-testid="stExpander"] { background: var(--panel); border: 1px solid var(--line); }
 [data-testid="stExpander"] summary { text-transform: uppercase; letter-spacing: .08em; font-size: .74rem; }
 [data-testid="stFileUploaderDropzone"] { background: var(--panel); border: 1px dashed var(--lime-dim); padding: .8rem; }
+
+
+/* the small delete buttons: make sure the cross glyph comes from a font that has it */
+[class*="st-key-del_"] button, [class*="st-key-delc_"] button {
+  font-family: "Segoe UI Symbol", "DejaVu Sans", sans-serif !important; font-size: 1rem; letter-spacing: 0; padding: 0; }
 
 /* ---- corner-bracket panels ---- */
 .g-panel { position: relative; border: 1px solid var(--line); background: var(--panel); }
@@ -112,9 +117,9 @@ header[data-testid="stHeader"] { background: transparent; }
 .g-doc { padding: .5rem .75rem; }
 .g-doc-name { font-weight: 600; font-size: .82rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .g-doc-meta { color: var(--muted); font-size: .7rem; margin-top: .1rem; letter-spacing: .04em; }
-.st-key-chats .stButton > button { justify-content: flex-start; text-align: left; text-transform: none;
+.st-key-chats .stButton button { justify-content: flex-start; text-align: left; text-transform: none;
   letter-spacing: 0; font-weight: 400; font-size: .8rem; }
-.st-key-chats .stButton > button[kind="primary"], .st-key-chats .stButton > button[data-testid="stBaseButton-primary"] { font-weight: 700; }
+.st-key-chats .stButton button[kind="primary"], .st-key-chats .stButton button[data-testid="stBaseButton-primary"] { font-weight: 700; }
 .g-usage { padding: .7rem .8rem; }
 .g-usage-title { font-size: .68rem; letter-spacing: .16em; color: var(--lime); text-transform: uppercase; margin-bottom: .45rem; }
 .g-bar-row { display: grid; grid-template-columns: 5.4rem 1fr auto; gap: .5rem; align-items: center;
@@ -130,9 +135,9 @@ header[data-testid="stHeader"] { background: transparent; }
 .g-welcome-title { font-family: var(--display); font-weight: 700; font-size: 1rem; text-transform: uppercase;
   margin-top: 1.1rem; letter-spacing: .02em; }
 .g-welcome-sub { color: var(--muted); font-size: .82rem; margin: .25rem 0 .9rem; }
-.st-key-suggestions .stButton > button { width: 100%; justify-content: flex-start; text-align: left;
+.st-key-suggestions .stButton button { width: 100%; justify-content: flex-start; text-align: left;
   background: var(--panel); border: 1px solid var(--line); padding: .7rem .95rem; color: var(--text); }
-.st-key-suggestions .stButton > button:hover { border-color: var(--lime); color: var(--lime); }
+.st-key-suggestions .stButton button:hover { border-color: var(--lime); color: var(--lime); }
 .g-empty { padding: 1.5rem 1.5rem 1.3rem; margin-top: .4rem; }
 .g-empty-title { font-family: var(--display); font-weight: 700; font-size: 1.15rem; text-transform: uppercase; }
 .g-empty-sub { color: var(--muted); margin: .35rem 0 1.3rem; font-size: .85rem; }
@@ -167,7 +172,7 @@ header[data-testid="stHeader"] { background: transparent; }
 /* ---- sign-in card ---- */
 [data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .g-auth-title) { position: relative; border: 1px solid var(--line);
   background: var(--panel); border-radius: 0 !important; padding: 1.4rem 1.2rem 1.2rem; }
-[data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .g-auth-title) .stButton > button { width: 100%; padding: .65rem 1rem; }
+[data-testid="stVerticalBlock"]:has(> [data-testid="stElementContainer"] .g-auth-title) .stButton button { width: 100%; padding: .65rem 1rem; }
 .g-auth-spacer { height: 4vh; }
 .g-auth-title { font-family: var(--display); font-weight: 700; font-size: 1.5rem; letter-spacing: .02em;
   text-transform: uppercase; margin: 1.2rem 0 .4rem; }

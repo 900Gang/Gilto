@@ -1,118 +1,208 @@
 # Gilto
 
-Upload PDFs and chat with them. Answers come only from your files, cite `[filename, p.N]`, and every citation is checked against the passages that were retrieved. When the files do not contain the answer, Gilto says so.
+**Upload your documents and chat with them. Every answer comes from your own files and cites the page it came from. If the answer is not in your files, Gilto says so instead of guessing.**
 
-Stack: Python, Gemini API (answers and embeddings), Chroma, Streamlit. See `SPEC.md` for the full design. It reads text and scanned PDFs and images, supports Google sign-in with private libraries and saved chats, applies usage limits, combines vector and keyword search, summarizes whole documents, and ships with a Docker setup for Render.
+![Python](https://img.shields.io/badge/python-3.11--3.13-3776AB?logo=python&logoColor=white)
+![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B?logo=streamlit&logoColor=white)
+![Gemini](https://img.shields.io/badge/LLM-Gemini-4285F4?logo=googlegemini&logoColor=white)
+![Tests](https://img.shields.io/badge/tests-222%20passing-C8F31D)
+![License](https://img.shields.io/badge/license-MIT-lightgrey)
 
-## Setup
+![Gilto answering a question with a citation and its source passage](docs/screenshots/chat.png)
 
-Needs Python 3.11 to 3.13 and a Gemini API key. Create a key at https://aistudio.google.com/apikey.
+<details>
+<summary>More screenshots</summary>
+
+| Home, with a document loaded | Sign-in |
+|---|---|
+| ![Home screen with starter questions](docs/screenshots/home.png) | ![Sign-in card](docs/screenshots/login.png) |
+
+</details>
+
+## What it does
+
+- **Grounded answers with citations.** Replies cite `[file, p.N]`. Every citation is checked against the passages that were actually retrieved, and an invented one is removed.
+- **Says "I couldn't find that" when it should.** A similarity threshold and a strict prompt keep it from answering from outside knowledge.
+- **PDFs, scans and images.** Text PDFs are read directly. Scanned pages and PNG/JPG files go through OCR: Tesseract first, Gemini vision when Tesseract is missing, unsure, or reads Hindi.
+- **Hybrid search.** Vector search plus keyword search (BM25) merged with reciprocal rank fusion, so exact terms such as invoice numbers and names are found too.
+- **Whole-document summaries.** "Summarize this", "give me an overview" and "compare" read the full document in parts. A *Search in* picker chooses the documents.
+- **English and Hindi.** Questions and answers follow the user's language.
+- **Many users, each private.** Google sign-in with an email allowlist, a separate library and saved chat history per user, and per-user usage limits.
+- **Safe with untrusted documents.** Document text is treated as data, never as instructions, and a hidden instruction inside a PDF is not followed.
+- **Self-service privacy.** A consent step before the first upload, "Delete my data", and automatic removal of accounts inactive for 90 days.
+
+## How it works
+
+```mermaid
+flowchart LR
+    U[User] -->|Google sign-in| APP[Streamlit app]
+
+    subgraph Indexing
+      APP --> LOAD[PDF loader]
+      APP --> OCR[OCR: Tesseract, then Gemini vision]
+      LOAD --> CHUNK[Chunker]
+      OCR --> CHUNK
+      CHUNK --> EMB[Gemini embeddings]
+      EMB --> STORE[(Chroma, one collection per user)]
+    end
+
+    subgraph Answering
+      APP --> Q[Question]
+      Q --> VEC[Vector search]
+      Q --> KEY[Keyword search]
+      STORE --> VEC
+      STORE --> KEY
+      VEC --> FUSE[Rank fusion]
+      KEY --> FUSE
+      FUSE --> LLM[Gemini answer]
+      LLM --> CHECK[Citation check]
+      CHECK --> APP
+    end
+
+    APP --> DB[(SQLite: users, chats, usage)]
+```
+
+Gemini calls retry on rate limits and server errors. If the main model is busy or over quota, answers move to a fallback model and then to the fast model, so a question rarely fails outright.
+
+## Quick start
+
+You need Python 3.11 to 3.13 and a Gemini API key from https://aistudio.google.com/apikey.
 
 ```bash
+git clone https://github.com/900Gang/Gilto.git
+cd Gilto
 python -m venv .venv
-source .venv/Scripts/activate   # Windows Git Bash; use .venv/bin/activate on macOS/Linux
+source .venv/Scripts/activate        # Windows Git Bash. On macOS or Linux: source .venv/bin/activate
 python -m pip install -r requirements.txt
 cp .env.example .env
 ```
 
-Put your key in `.env` as `GEMINI_API_KEY=...`. Never put it in `.env.example` or any other tracked file. Embeddings also come from the Gemini API, so no model is downloaded and almost no memory is needed. To run the embedding model on your own machine instead, set `EMBEDDING_PROVIDER=local`, install `requirements-local.txt` and keep about 1.2 GB of RAM free.
+Put your key in `.env` as `GEMINI_API_KEY=...`. Never put it in `.env.example` or any other tracked file.
 
-## Run
+For a first run without Google sign-in, also add `AUTH_DISABLED=true` to `.env`. That skips sign-in and uses one shared user called `local`. **Use it on your own machine only.**
 
 ```bash
 python -m streamlit run app.py
 ```
 
-Tick the consent box (first time only), upload PDFs or images (PNG, JPG) in the sidebar, click **Add to library**, then ask questions. Chats are saved and listed in the sidebar.
+Open http://localhost:8501, tick the consent box, upload a PDF or image, click **Add to library**, and ask a question.
 
-## Searching and summarizing
+**Optional: Tesseract for fast local OCR.** Without it, scanned pages are read by Gemini vision, which works but uses one API request per page. On Windows, install it from https://github.com/UB-Mannheim/tesseract/wiki and tick Hindi under additional language data. Gilto finds `C:\Program Files\Tesseract-OCR\tesseract.exe` by itself. Set `TESSERACT_CMD` if it lives elsewhere.
 
-- **Hybrid search.** Each question runs a vector search and a keyword search, and the two ranked lists are merged. Keyword search finds exact terms such as invoice numbers, names and codes that vector search can miss. A passage found only by keyword shows "keyword match" in Sources instead of a relevance score. A question about something that is not in your files still gets "I couldn't find that in the uploaded documents." Set `HYBRID_SEARCH=false` for vector search only.
-- **Summaries.** Ask to "summarize this document", "give me an overview", "what are the main points" or "compare ..." and Gilto reads the whole document in parts, then answers with citations. With two or more documents, a **Search in** picker appears in the sidebar. Leave it empty to use all documents. A request is limited to 4 documents and about 100 pages, and above that Gilto asks you to pick fewer. A summary makes several Gemini calls, so it uses more of your daily token allowance than a normal question and can take a while. Summaries have no Sources list because they draw on every page.
+## Google sign-in
 
-## Users and sign-in
-
-Gilto uses Google sign-in. Each user has a private library and private chats, and only emails listed in `ALLOWED_EMAILS` can get in. An empty list lets nobody in.
-
-1. Create a Google OAuth client (type Web application) in Google Cloud Console. Add `http://localhost:8501/oauth2callback` as an authorized redirect URI.
+1. In Google Cloud Console, create an OAuth client of type **Web application**. Add `http://localhost:8501/oauth2callback` as an authorized redirect URI, and add your own email as a test user.
 2. Copy `.streamlit/secrets.toml.example` to `.streamlit/secrets.toml` and fill in `client_id`, `client_secret` and a random `cookie_secret`. This file is ignored by git. Never commit it.
-3. Set `ALLOWED_EMAILS=you@gmail.com,friend@gmail.com` in `.env`.
+3. In `.env`, remove `AUTH_DISABLED=true` and set `ALLOWED_EMAILS=you@gmail.com,friend@gmail.com`. An empty list lets nobody in.
 
-For local testing without Google, set `AUTH_DISABLED=true` in `.env`. That skips sign-in and uses one shared user called `local`. Never use it on a server.
+## Deploy
 
-**Limits** (set to 0 to turn one off): `HOURLY_QUESTION_LIMIT` (30), `DAILY_TOKEN_LIMIT` (200000) and an app-wide `MONTHLY_TOKEN_CAP` (5000000). Tokens are estimated at 3 characters each, and vision OCR calls are not counted.
+**Streamlit Community Cloud (free).** Connect the repo at https://share.streamlit.io with `app.py` as the main file. `packages.txt` installs Tesseract. In the app's **Secrets** box, add your settings, with root-level keys above `[auth]`:
 
-**Data:** users can delete their documents, chats and usage history from **Account** in the sidebar. Accounts not seen for `INACTIVE_DAYS` (90) are deleted when the server starts. Chats and accounts live in `gilto.db`.
+```toml
+GEMINI_API_KEY = "..."
+ALLOWED_EMAILS = "you@gmail.com"
+AUTH_DISABLED = "false"
+CHROMA_PATH = "/tmp/gilto/chroma_db"
+OCR_CACHE_PATH = "/tmp/gilto/ocr_cache"
+SQLITE_PATH = "/tmp/gilto/gilto.db"
+DEMO_NOTICE = "Demo hosting: uploaded files and chats are erased when the app restarts or sleeps."
 
-## Scanned PDFs and images
-
-Pages without a text layer, and every image, go through OCR. Tesseract runs first (local and free). When Tesseract is missing, unsure (confidence below `OCR_CONFIDENCE_THRESHOLD`), finds under 50 characters, or reads Hindi (Devanagari) text, the page goes to Gemini vision instead. Hindi always goes to vision because Tesseract reports high confidence on Hindi even when its words are wrong. Without a Gemini key, Hindi pages stay with Tesseract and are flagged as low confidence. Each source in the answer shows how its page was read: `text`, `ocr`, or `vision`.
-
-- **Gemini vision only (no install).** Works with just your API key. Each scanned page is one Gemini request, so a long scan on a free-tier key can hit rate limits. Results are cached by file hash and page in `ocr_cache/`, so a retry never pays twice.
-- **With Tesseract (recommended for long scans).** Install it, plus the `eng` and `hin` language data. On Windows use the installer from https://github.com/UB-Mannheim/tesseract/wiki and tick Hindi under additional language data. Gilto finds `C:\Program Files\Tesseract-OCR\tesseract.exe` by itself. Set `TESSERACT_CMD` if it is installed elsewhere.
-- Handwriting is not supported. Page images read by Gemini vision are sent to Google's Gemini API.
-
-## Test
-
-```bash
-python -m pytest
+[auth]
+redirect_uri = "https://YOUR-SUBDOMAIN.streamlit.app/oauth2callback"
+cookie_secret = "a-new-random-string"
+client_id = "..."
+client_secret = "..."
+server_metadata_url = "https://accounts.google.com/.well-known/openid-configuration"
 ```
 
-Gemini calls are mocked in the tests, so they need no API key.
+Add the same redirect URI to your Google OAuth client. **Data on Community Cloud is temporary**: documents, chats and accounts are lost when the app restarts or sleeps, and apps sleep after 12 hours without visitors.
 
-### Answer-quality evaluation
-
-This runs real questions against the real Gemini API, so it is skipped in the normal run. It needs your `GEMINI_API_KEY`. Each run asks Gemini about 10 questions and embeds a few pages, so it uses a little of your quota.
-
-```bash
-python -m pytest -m eval -s
-```
-
-It indexes a document, asks each question, and checks that answers contain the expected words with a citation to the right page, and that out-of-scope questions are refused. The bar is 90% of answerable questions correct and 100% of out-of-scope questions refused. It also checks that an instruction hidden inside a document is not followed. With no `eval/cases.json` it uses a small built-in sample.
-
-To test your own documents, put PDFs in `eval/docs/`, copy `eval/cases.example.json` to `eval/cases.json`, and list your documents and questions. Both paths are ignored by git. Set `EVAL_DELAY_SECONDS` (default 4) higher if you hit rate limits.
-
-## Deploy to Render
-
-The repo includes a `Dockerfile`, `start.sh` and `render.yaml`. These have not been built or deployed yet, so expect to fix small problems on the first run.
-
-**Cost and size.** Embeddings run on the Gemini API, so the image has no PyTorch and the service needs little memory. `render.yaml` uses the `starter` plan (about 512 MB). If it runs out of memory, change the plan to `standard`. Persistent disks are not available on the free plan, and without one your documents, chats and accounts vanish on every restart. Check Render's current pricing before you create the service.
-
-1. Commit and push to GitHub. Check that `git status` does not list `.env` or `.streamlit/secrets.toml`.
-2. In the Render dashboard choose **New > Blueprint**, select the repo, and Render reads `render.yaml`. Enter `GEMINI_API_KEY` and `ALLOWED_EMAILS` when asked. Data goes to a 5 GB disk mounted at `/data`.
-3. Open the new service, go to **Environment > Secret Files**, and add a file named `secrets.toml` with the `[auth]` block from `.streamlit/secrets.toml.example`. Set `redirect_uri` to `https://YOUR-SERVICE.onrender.com/oauth2callback` and generate a new `cookie_secret`. `start.sh` copies this file into place at startup.
-4. In Google Cloud Console, add the same redirect URI to your OAuth client.
-5. Redeploy, open the service URL, and sign in with an allowlisted email.
-
-To try the image on your own machine first, install Docker, then:
+**Render, with Docker.** The repo includes a `Dockerfile`, `start.sh` and `render.yaml`. They keep data on a persistent disk, which needs a paid plan. Create a Blueprint from the repo, enter `GEMINI_API_KEY` and `ALLOWED_EMAILS`, and add the `[auth]` block above as a secret file named `secrets.toml`. To try the image locally:
 
 ```bash
 docker build -t gilto .
 docker run -p 8501:8501 -e AUTH_DISABLED=true -e GEMINI_API_KEY=your-key gilto
 ```
 
-Use `AUTH_DISABLED=true` only for this local test.
-
 ## Configuration
 
-All settings are environment variables. See `.env.example` for the full list and defaults.
+Every setting is an environment variable. See `.env.example` for the full list.
 
-- `GEMINI_MODEL`: answers. `GEMINI_FAST_MODEL`: follow-up question rewriting. `GEMINI_FALLBACK_MODEL`: used when the main model keeps returning transient errors (500/503/504) or is over its quota (429). Gemini is sometimes overloaded, so answers retry with backoff, then try the fallback model, then `GEMINI_FAST_MODEL` as a last resort. The last resort is cheaper and can be lower quality, and the app does not show which model answered.
-- `EMBEDDING_PROVIDER` (`gemini` or `local`), `GEMINI_EMBEDDING_MODEL` (gemini-embedding-001), `EMBEDDING_DIMENSIONS` (768). Each embedding model gets its own collections, so after changing any of these you need to upload your documents again. Scanned pages are not re-read, because OCR results are cached.
-- `SIMILARITY_THRESHOLD` (default 0.60 for Gemini embeddings, 0.80 for the local model): passages scoring below this are dropped. If nothing passes, Gilto answers "I couldn't find that in the uploaded documents." without calling Gemini. Tuned on a small sample (relevant questions scored 0.65 to 0.82, unrelated ones up to 0.54); raise it if unrelated questions get answers, lower it if good questions get refused. Leave it unset in `.env` unless you have measured your own documents, because a value left over from the local model (0.80) would reject nearly everything.
-- Upload limits: `MAX_FILE_MB`, `MAX_PAGES_PER_FILE`, `MAX_DOCS_PER_USER`, `MAX_TOTAL_PAGES`.
-- OCR: `OCR_LANGS`, `OCR_CONFIDENCE_THRESHOLD`, `OCR_DPI`, `OCR_CACHE_PATH`, `TESSERACT_CMD`.
-- Search: `HYBRID_SEARCH` (default true).
-- Evaluation: `EVAL_DELAY_SECONDS` (default 4), `EVAL_CASES` (path to a cases file, default `eval/cases.json`).
+| Variable | Default | What it does |
+|---|---|---|
+| `GEMINI_API_KEY` | none | Required. Used for answers, embeddings and vision OCR. |
+| `GEMINI_MODEL` / `GEMINI_FALLBACK_MODEL` / `GEMINI_FAST_MODEL` | `gemini-3.8-flash` / `gemini-3.6-flash` / `gemini-3.5-flash-lite` | Main, backup and last-resort answer models. The fast model also rewrites follow-ups and reads scans. |
+| `EMBEDDING_PROVIDER` | `gemini` | `gemini` uses the API. `local` runs a model on your machine (`pip install -r requirements-local.txt`, about 1.2 GB of RAM). |
+| `SIMILARITY_THRESHOLD` | `0.60` (Gemini), `0.80` (local) | Passages scoring below this are dropped. Leave it unset unless you have measured your own documents. |
+| `HYBRID_SEARCH` | `true` | Vector plus keyword search. |
+| `ALLOWED_EMAILS` | empty | Who may sign in. |
+| `AUTH_DISABLED` | `false` | Local testing only. |
+| `HOURLY_QUESTION_LIMIT` / `DAILY_TOKEN_LIMIT` / `MONTHLY_TOKEN_CAP` | `30` / `200000` / `5000000` | Usage limits. `0` turns one off. Tokens are estimated at 3 characters each. |
+| `MAX_FILE_MB`, `MAX_PAGES_PER_FILE`, `MAX_DOCS_PER_USER`, `MAX_TOTAL_PAGES` | `20`, `100`, `15`, `500` | Upload limits per user. |
+| `INACTIVE_DAYS` | `90` | Accounts not seen for this long are deleted at server start. |
+| `OCR_LANGS`, `OCR_CONFIDENCE_THRESHOLD`, `TESSERACT_CMD` | `eng+hin`, `60` | OCR tuning. |
 
-## Limits of this version
+Each embedding model gets its own Chroma collections, so after changing `EMBEDDING_PROVIDER` or the embedding model you need to upload your documents again. Scanned pages are not re-read, because OCR results are cached.
 
-- Handwriting is not read. Pages with no readable text are skipped with a warning.
-- When the main Gemini model hits its quota (429), answers move to the next model straight away, because quotas are per model. If every model is busy or over quota you see a plain message and can try again.
+## Testing
+
+```bash
+python -m pytest
+```
+
+222 tests cover the loader, chunker, OCR routing, store, indexer, hybrid retrieval, summaries, citations, the Gemini client (retries, fallbacks, error messages), embeddings, sign-in rules, database isolation, quotas and retention. Gemini calls are mocked, so no API key is needed.
+
+**Answer-quality evaluation** runs real questions against the real Gemini API. It is skipped in the normal run.
+
+```bash
+python -m pytest -m eval -s
+```
+
+It checks that answers contain the expected facts with a citation to the right page, that out-of-scope questions are refused, and that an instruction hidden inside a document is ignored. The pass bar is 90% of answerable questions correct and 100% of out-of-scope questions refused. With no `eval/cases.json` it uses a built-in sample. To test your own documents, put PDFs in `eval/docs/`, copy `eval/cases.example.json` to `eval/cases.json`, and list your documents and questions. Both paths are ignored by git.
+
+## Project structure
+
+```
+app.py                  Streamlit UI (layout and state only)
+ui.py                   theme CSS and small HTML components
+rag/
+  config.py             settings from environment variables
+  llm.py                Gemini client: streaming, retries, model fallback, vision
+  embedder.py           Gemini embeddings and the optional local model
+  loader.py  ocr.py     PDF and image reading, Tesseract and vision OCR with a cache
+  chunker.py            overlapping chunks with page metadata
+  store.py              Chroma wrapper, one collection per user and embedding model
+  bm25.py  fusion.py    keyword search and reciprocal rank fusion
+  chain.py              retrieval, prompts, summaries, citation checking
+  summarize.py          summary detection and batching
+  indexer.py            upload to chunks, limits, duplicate detection
+  auth.py  db.py        allowlist, SQLite users and chats
+  limits.py  retention.py   quotas, data deletion
+tests/                  unit tests and the evaluation suite
+Dockerfile  render.yaml  start.sh  packages.txt   deployment files
+SPEC.md                 design decisions and their reasons
+```
+
+## Privacy and security
+
+- Document text and scanned page images are sent to Google's Gemini API. A consent checkbox appears before the first upload. On Google's free tier, submitted content may be used to improve Google products (check Google's current terms), so use a paid-tier key for confidential documents.
+- Each user's documents live in their own collection, and every chat query also checks the owner.
+- Secrets stay out of git: `.env` and `.streamlit/secrets.toml` are ignored, and the API key is hidden from tracebacks.
 - Original uploaded files are not stored, only extracted text chunks and the OCR cache.
-- Google sign-in is the only login method. It was not tested end to end with real Google credentials.
-- Summaries are limited to 4 documents and about 100 pages per request.
-- The Docker image, the Render deployment, and Hindi OCR on real scans have not been verified yet.
-- The evaluation suite passed on the built-in sample (9 questions) using Gemini embeddings, but the answers came from `gemini-3.5-flash-lite` because the main models were rate limited at the time.
-- Document text is sent to Google's Gemini API to answer questions. On Google's free tier, submitted content may be used to improve Google products (check Google's current terms), so use a paid-tier key for confidential documents.
-- A free-tier key has low rate limits. If you see "rate limit or quota was reached", wait a minute and try again.
+
+## Status and limitations
+
+**Checked.** The unit tests, live Gemini answers with correct citations and refusals, keyword-only retrieval, summaries, OCR of a scanned PDF and a PNG through Gemini vision, local Tesseract on English, the model fallback chain, the interface in a real browser, and Google sign-in on a local machine.
+
+**Not checked yet.** Hindi OCR on a real scan (the Hindi routing is unit-tested, but accuracy on real pages is unmeasured), building the Docker image, deploying to Render, and a long-running Streamlit Community Cloud deployment.
+
+**Known limits.** Handwriting is not read. A summary covers at most 4 documents and about 100 pages. The similarity threshold was set from a small sample, so measure it again on your own documents. The model IDs come from Google's list at the time of writing and may need updating. Free-tier Gemini keys have low rate limits, so you may see "rate limit or quota was reached" and need to wait a minute.
+
+## Design
+
+The look is a dark, monospace "cyber brutalist" theme with a lime accent, corner brackets, numbered sections and a system-status panel for usage. See `SPEC.md` for the architecture decisions and why each was made.
+
+## License
+
+MIT. See `LICENSE`.
