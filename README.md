@@ -20,6 +20,19 @@
 
 </details>
 
+## Try it
+
+Two sample files are in `docs/demo/`: `acme-policies.pdf` (a 3-page text PDF) and `sale-notice.png` (an image with no text layer, so it needs OCR). Upload both and try:
+
+| Ask | You should get |
+|---|---|
+| How long is the warranty on accessories? | 6 months, cited to `acme-policies.pdf` page 2 |
+| When does the spring sale end, and do members get a discount? | 14 April and an extra 15 percent, cited to `sale-notice.png` |
+| Who won the 2018 football world cup? | "I couldn't find that in the uploaded documents." |
+| Summarize my documents | A cited summary across both files |
+
+A full 90-second walkthrough and an interview pitch are in [`docs/DEMO.md`](docs/DEMO.md).
+
 ## What it does
 
 - **Grounded answers with citations.** Replies cite `[file, p.N]`. Every citation is checked against the passages that were actually retrieved, and an invented one is removed.
