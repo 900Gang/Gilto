@@ -2,6 +2,8 @@
 
 **Upload your documents and chat with them. Every answer comes from your own files and cites the page it came from. If the answer is not in your files, Gilto says so instead of guessing.**
 
+**Live demo:** https://gilto-nanomachine.streamlit.app/ (sign-in is limited to approved Google accounts, and data on this free host is erased when the app restarts or sleeps)
+
 ![Python](https://img.shields.io/badge/python-3.11--3.13-3776AB?logo=python&logoColor=white)
 ![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B?logo=streamlit&logoColor=white)
 ![Gemini](https://img.shields.io/badge/LLM-Gemini-4285F4?logo=googlegemini&logoColor=white)
