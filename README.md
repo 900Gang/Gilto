@@ -5,7 +5,8 @@
 ![Python](https://img.shields.io/badge/python-3.11--3.13-3776AB?logo=python&logoColor=white)
 ![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B?logo=streamlit&logoColor=white)
 ![Gemini](https://img.shields.io/badge/LLM-Gemini-4285F4?logo=googlegemini&logoColor=white)
-![Tests](https://img.shields.io/badge/tests-222%20passing-C8F31D)
+[![CI](https://github.com/900Gang/Gilto/actions/workflows/ci.yml/badge.svg)](https://github.com/900Gang/Gilto/actions/workflows/ci.yml)
+![Tests](https://img.shields.io/badge/tests-243%20passing-C8F31D)
 ![License](https://img.shields.io/badge/license-MIT-lightgrey)
 
 ![Gilto answering a question with a citation and its source passage](docs/screenshots/chat.png)
@@ -27,6 +28,7 @@
 - **Hybrid search.** Vector search plus keyword search (BM25) merged with reciprocal rank fusion, so exact terms such as invoice numbers and names are found too.
 - **Whole-document summaries.** "Summarize this", "give me an overview" and "compare" read the full document in parts. A *Search in* picker chooses the documents.
 - **English and Hindi.** Questions and answers follow the user's language.
+- **Works on phones.** On narrow screens the sidebar becomes a menu, chat tags sit above messages, and buttons get larger touch targets.
 - **Many users, each private.** Google sign-in with an email allowlist, a separate library and saved chat history per user, and per-user usage limits.
 - **Safe with untrusted documents.** Document text is treated as data, never as instructions, and a hidden instruction inside a PDF is not followed.
 - **Self-service privacy.** A consent step before the first upload, "Delete my data", and automatic removal of accounts inactive for 90 days.
@@ -151,7 +153,7 @@ Each embedding model gets its own Chroma collections, so after changing `EMBEDDI
 python -m pytest
 ```
 
-222 tests cover the loader, chunker, OCR routing, store, indexer, hybrid retrieval, summaries, citations, the Gemini client (retries, fallbacks, error messages), embeddings, sign-in rules, database isolation, quotas and retention. Gemini calls are mocked, so no API key is needed.
+243 tests cover the loader, chunker, OCR routing, store, indexer, hybrid retrieval, summaries, citations, the Gemini client (retries, fallbacks, error messages), embeddings, sign-in rules, database isolation, quotas, retention and the secret scanner. Gemini calls are mocked, so no API key is needed.
 
 **Answer-quality evaluation** runs real questions against the real Gemini API. It is skipped in the normal run.
 
@@ -160,6 +162,18 @@ python -m pytest -m eval -s
 ```
 
 It checks that answers contain the expected facts with a citation to the right page, that out-of-scope questions are refused, and that an instruction hidden inside a document is ignored. The pass bar is 90% of answerable questions correct and 100% of out-of-scope questions refused. With no `eval/cases.json` it uses a built-in sample. To test your own documents, put PDFs in `eval/docs/`, copy `eval/cases.example.json` to `eval/cases.json`, and list your documents and questions. Both paths are ignored by git.
+
+## Development
+
+**Automatic checks.** `.github/workflows/ci.yml` runs on every push and pull request. One job runs the tests. A second job scans the working tree with `scripts/check_secrets.py` and the whole git history with [gitleaks](https://github.com/gitleaks/gitleaks).
+
+**Stop secrets before they are committed.** Turn on the commit hook once per clone:
+
+```bash
+git config core.hooksPath scripts/hooks
+```
+
+From then on `git commit` is blocked if a staged file looks like a key, a client secret or a private key, or if `.env`, `.streamlit/secrets.toml` or a database file is staged. Run the same check on every tracked file with `python scripts/check_secrets.py --all`. The check never prints the secret it found.
 
 ## Project structure
 
@@ -180,6 +194,8 @@ rag/
   auth.py  db.py        allowlist, SQLite users and chats
   limits.py  retention.py   quotas, data deletion
 tests/                  unit tests and the evaluation suite
+scripts/                secret scanner and the commit hook
+.github/workflows/      CI: tests and secret scanning
 Dockerfile  render.yaml  start.sh  packages.txt   deployment files
 SPEC.md                 design decisions and their reasons
 ```
@@ -188,7 +204,7 @@ SPEC.md                 design decisions and their reasons
 
 - Document text and scanned page images are sent to Google's Gemini API. A consent checkbox appears before the first upload. On Google's free tier, submitted content may be used to improve Google products (check Google's current terms), so use a paid-tier key for confidential documents.
 - Each user's documents live in their own collection, and every chat query also checks the owner.
-- Secrets stay out of git: `.env` and `.streamlit/secrets.toml` are ignored, and the API key is hidden from tracebacks.
+- Secrets stay out of git: `.env` and `.streamlit/secrets.toml` are ignored, the API key is hidden from tracebacks, and a commit hook plus CI scan for leaked keys.
 - Original uploaded files are not stored, only extracted text chunks and the OCR cache.
 
 ## Status and limitations

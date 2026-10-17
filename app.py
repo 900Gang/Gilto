@@ -31,7 +31,7 @@ st.set_page_config(
     page_title="Gilto",
     page_icon=":material/description:",
     layout="wide",
-    initial_sidebar_state="expanded",
+    initial_sidebar_state="auto",
 )
 
 SUGGESTIONS = ["Summarize my documents", "What are the key points?", "What is this document about?"]

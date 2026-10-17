@@ -179,6 +179,33 @@ header[data-testid="stHeader"] { background: transparent; }
 .g-auth-title.danger { color: var(--danger); }
 .g-auth-body { color: var(--muted); font-size: .85rem; line-height: 1.55; margin-bottom: 1.1rem; }
 .g-foot { color: #6C7263; font-size: .7rem; letter-spacing: .08em; text-align: center; margin-top: .9rem; text-transform: uppercase; }
+
+/* ---- phones and small tablets ---- */
+.g-mobile-hint { display: none; }
+@media (max-width: 768px) {
+  .block-container { padding: 3.6rem .8rem 6.5rem; }
+  .st-key-suggestions [data-testid="stElementContainer"], .st-key-suggestions [data-testid="stButton"],
+  .st-key-suggestions .stButton { width: 100% !important; }
+  .st-key-suggestions .stButton button { width: 100%; }
+  [data-testid="stSidebar"] [data-testid="stHorizontalBlock"] { flex-wrap: nowrap !important; gap: .4rem; }
+  [data-testid="stSidebar"] [data-testid="stColumn"] { min-width: 0 !important; }
+  [data-testid="stSidebar"] [data-testid="stColumn"]:first-child { flex: 1 1 0% !important; width: auto !important; }
+  [data-testid="stSidebar"] [data-testid="stColumn"]:last-child { flex: 0 0 2.75rem !important; width: 2.75rem !important; }
+  [data-testid="stBottomBlockContainer"] { padding-left: .8rem; padding-right: .8rem; }
+  .g-header-title { font-size: clamp(1.4rem, 7vw, 2rem); }
+  .g-cell { padding: .3rem .6rem; font-size: .6rem; }
+  [data-testid="stChatMessage"] { flex-direction: column; gap: .2rem; }
+  [data-testid="stChatMessage"]::before { width: auto; padding-top: 0; }
+  [data-testid="stChatMessage"]:has([data-testid="stChatMessageAvatarAssistant"]) { padding-left: .7rem; }
+  [data-testid="stChatInputTextArea"] { font-size: 16px; }
+  .stButton button { min-height: 2.75rem; }
+  .g-source-name, .g-doc-name, .g-source-text { overflow-wrap: anywhere; }
+  .g-auth-spacer { height: 1vh; }
+  .g-empty { padding: 1.1rem; }
+  .g-mobile-hint { display: block; border: 1px dashed var(--lime-dim); color: var(--lime); font-size: .72rem;
+    letter-spacing: .08em; text-transform: uppercase; padding: .5rem .7rem; margin: .6rem 0 1rem; }
+  [data-testid="stExpandSidebarButton"], [data-testid="stSidebarCollapsedControl"] button { border: 1px solid var(--lime); }
+}
 </style>
 """
 
@@ -264,7 +291,8 @@ def usage_panel(rows: list[tuple[str, float, str]], low: bool) -> None:
 def welcome() -> None:
     st.markdown(
         '<div class="g-welcome-title">What do you want to know?</div>'
-        '<div class="g-welcome-sub">Ask about your documents, or start with one of these.</div>',
+        '<div class="g-welcome-sub">Ask about your documents, or start with one of these.</div>'
+        '<div class="g-mobile-hint">Tap the menu at the top left to add documents and open your chats.</div>',
         unsafe_allow_html=True,
     )
 
@@ -291,6 +319,7 @@ def empty_state() -> None:
     st.markdown(
         '<div class="g-panel g-empty"><div class="g-empty-title g-cursor">No documents loaded</div>'
         '<div class="g-empty-sub">If the answer is not in your files, Gilto says so instead of guessing.</div>'
+        '<div class="g-mobile-hint">Tap the menu at the top left to add documents.</div>'
         f'<div class="g-steps">{items}</div></div>',
         unsafe_allow_html=True,
     )
